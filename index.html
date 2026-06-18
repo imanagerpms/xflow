@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>bnbFlow Studio</title>
+    <title>X Dash Flow</title>
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23121917'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='24' font-family='Arial' font-weight='700' fill='white'%3Ebf%3C/text%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23121917'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='24' font-family='Arial' font-weight='700' fill='white'%3Exd%3C/text%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -70,12 +70,19 @@
 
     <div class="app-shell">
       <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark">bf</span>
-          <div>
-            <p class="eyebrow">Hospitality automation</p>
-            <h1>bnbFlow Studio</h1>
+        <div class="brand-area">
+          <div class="brand">
+            <span class="brand-mark">xd</span>
+            <div>
+              <p class="eyebrow">Automation studio</p>
+              <h1>X Dash Flow</h1>
+            </div>
           </div>
+          <label class="business-switcher">
+            <span id="businessType">Business</span>
+            <select id="businessSelect" aria-label="Seleziona business"></select>
+            <small id="businessDescription">Seleziona un playbook operativo.</small>
+          </label>
         </div>
         <div class="topbar-center">
           <nav class="app-nav" aria-label="Aree applicative">
@@ -85,14 +92,6 @@
             <button class="app-nav-item" type="button" data-view="technical">Technical <span id="technicalBadge">0</span></button>
             <button class="app-nav-item" type="button" data-view="audit">Audit</button>
           </nav>
-          <label class="property-switcher">
-            <span>Struttura</span>
-            <select id="propertySelect">
-              <option>Casa Livia BnB - Roma</option>
-              <option>Villa Noto Rooms</option>
-              <option>Lake Loft Como</option>
-            </select>
-          </label>
           <div class="environment-pill" aria-label="Ambiente sandbox">
             <span></span>
             Sandbox operativo
@@ -142,7 +141,7 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Flussi pronti</p>
-                <h2>Playbook BnB</h2>
+                <h2 id="flowBrowserTitle">Playbook operativo</h2>
               </div>
               <button class="icon-button small" id="newFlowButton" type="button" aria-label="Duplica flusso" title="Duplica flusso">
                 <svg><use href="#icon-plus"></use></svg>
@@ -248,7 +247,7 @@
           <div class="tab-panel" id="outcomePanel">
             <label class="field">
               <span>Business outcome</span>
-              <input id="nodeBusinessGoalInput" type="text" placeholder="guest_can_access_property" />
+              <input id="nodeBusinessGoalInput" type="text" placeholder="business_outcome_verificato" />
             </label>
             <label class="field">
               <span>Capability</span>
@@ -319,7 +318,7 @@
       </main>
 
       <main class="module-view view-panel" id="operationsView" data-view-panel="operations" hidden>
-        <header class="module-header panel"><div><p class="eyebrow">Operations Inbox</p><h2>Completare il macro-obiettivo</h2><p>Le anomalie tecniche sono contesto; la priorita è proteggere ospite e struttura.</p></div><div class="view-stat" id="operationsStat">0 task aperti</div></header>
+        <header class="module-header panel"><div><p class="eyebrow">Operations Inbox</p><h2>Completare il macro-obiettivo</h2><p>Le anomalie tecniche sono contesto; la priorita è proteggere cliente, team e operativita.</p></div><div class="view-stat" id="operationsStat">0 task aperti</div></header>
         <div class="inbox-grid">
           <section class="inbox-list panel"><div class="filter-row"><button class="filter-chip active" type="button">Aperti</button><button class="filter-chip" type="button">Critici</button><button class="filter-chip" type="button">SLA &lt; 15m</button></div><div id="operationsList"></div></section>
           <section class="task-detail panel" id="operationsDetail"><div class="empty-panel">Avvia uno scenario con fallback umano per popolare la inbox.</div></section>

@@ -1,11 +1,12 @@
-# bnbFlow Studio
+# X Dash Flow
 
-Interfaccia low-code interattiva e runtime outcome-first per progettare, simulare e recuperare automazioni operative per BnB e strutture hospitality.
+Interfaccia low-code interattiva e runtime outcome-first per progettare, simulare e recuperare automazioni operative per piccoli business.
 
 ## Funzionalita
 
 - Canvas visuale con nodi trigger, decisioni, tool, task umani, outcome e stati terminali.
-- Catalogo canonico di 40 playbook: 8 aree da 5 flussi, 30 Core e 10 Avanzati.
+- Catalogo hospitality canonico di 40 playbook: 8 aree da 5 flussi, 30 Core e 10 Avanzati.
+- Selettore business con esempi verticali: studio dentistico, ristorante, poliambulatorio e boutique fitness, 15 flow ciascuno.
 - Tre flussi pilota eseguibili end-to-end: check-in e accesso, guasto in soggiorno e richiesta rimborso.
 - State machine per run e step con outcome routing, timeout, retry/backoff e idempotenza simulata.
 - Registry di tool mock con failure injection deterministica e scenari riproducibili.
@@ -44,7 +45,7 @@ La suite usa il test runner integrato di Node e non installa dipendenze. Copre c
 
 - `index.html`: shell, viste applicative e sprite delle icone.
 - `styles.css`: design system, layout densi e breakpoint responsive.
-- `catalog.js`: gruppi, metadata e definizioni dei 40 playbook.
+- `catalog.js`: gruppi, business demo, metadata e definizioni dei playbook.
 - `app.js`: router UI, editor, simulatore, inbox e integrazione del runtime.
 - `runtime.js`: state machine deterministica per run, step, tool attempt e task.
 - `mock-tools.js`: registry tool mock, failure injection e cache di idempotenza.

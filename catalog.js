@@ -10,6 +10,68 @@
     { id: "post-stay", label: "Post-soggiorno e compliance", description: "Relazione e adempimenti" },
   ];
 
+  const businesses = [
+    {
+      id: "hospitality",
+      name: "Casa Livia Hospitality",
+      type: "Hospitality diffusa",
+      description: "Appartamenti e camere con operations leggere, accessi digitali e guest recovery.",
+      groups,
+    },
+    {
+      id: "dental",
+      name: "Studio Sorriso Chiaro",
+      type: "Studio dentistico",
+      description: "Agenda clinica, richiami, preventivi e coordinamento assistenti senza diagnosi automatiche.",
+      groups: [
+        { id: "dental-intake", label: "Accoglienza pazienti", description: "Richieste, triage e prime visite" },
+        { id: "dental-agenda", label: "Agenda e richiami", description: "Slot, reminder e recuperi" },
+        { id: "dental-care", label: "Percorsi di cura", description: "Piani, follow-up e laboratorio" },
+        { id: "dental-admin", label: "Amministrazione", description: "Pagamenti, consensi e documenti" },
+        { id: "dental-ops", label: "Studio e materiali", description: "Sterilizzazione e scorte" },
+      ],
+    },
+    {
+      id: "restaurant",
+      name: "Trattoria Marea",
+      type: "Ristorante di quartiere",
+      description: "Prenotazioni, sala, cucina, delivery e reputazione per un locale indipendente.",
+      groups: [
+        { id: "restaurant-reservations", label: "Prenotazioni", description: "Tavoli, gruppi e lista d'attesa" },
+        { id: "restaurant-service", label: "Servizio sala", description: "Turni, allergie e recovery" },
+        { id: "restaurant-kitchen", label: "Cucina e fornitori", description: "Prep, stock e sostituzioni" },
+        { id: "restaurant-revenue", label: "Incassi e eventi", description: "Caparre, fatture e private dining" },
+        { id: "restaurant-reputation", label: "Reputazione", description: "Feedback, recensioni e loyalty" },
+      ],
+    },
+    {
+      id: "clinic",
+      name: "Medica Nova",
+      type: "Poliambulatorio",
+      description: "Prenotazioni specialistiche, referti, autorizzazioni e continuita operativa.",
+      groups: [
+        { id: "clinic-booking", label: "Prenotazioni visite", description: "Richieste, preparazione e reminder" },
+        { id: "clinic-documents", label: "Documenti clinici", description: "Consensi, impegnative e referti" },
+        { id: "clinic-care", label: "Percorsi paziente", description: "Follow-up e segnalazioni" },
+        { id: "clinic-admin", label: "Amministrazione sanitaria", description: "Pagamenti, privacy e assicurazioni" },
+        { id: "clinic-ops", label: "Operazioni ambulatorio", description: "Sale, medici e apparecchiature" },
+      ],
+    },
+    {
+      id: "fitness",
+      name: "Forma Lab",
+      type: "Boutique fitness",
+      description: "Classi a numero chiuso, abbonamenti, trainer e retention clienti.",
+      groups: [
+        { id: "fitness-sales", label: "Acquisizione clienti", description: "Trial, onboarding e referral" },
+        { id: "fitness-classes", label: "Classi e trainer", description: "Prenotazioni, waitlist e cambi" },
+        { id: "fitness-membership", label: "Abbonamenti", description: "Pagamenti, freeze e rinnovi" },
+        { id: "fitness-safety", label: "Sicurezza e sala", description: "Incidenti, attrezzatura e capienza" },
+        { id: "fitness-retention", label: "Retention", description: "Churn, feedback e community" },
+      ],
+    },
+  ];
+
   const existing = {
     "online-checkin": { group: "arrival-access", category: "Accessi digitali", level: "Core" },
     "late-checkout": { group: "checkout", category: "Partenze flessibili", level: "Core" },
@@ -328,6 +390,111 @@
     },
   ];
 
+  const businessRuntime = {
+    dental: {
+      target: "paziente",
+      source: "Gestionale studio + canali paziente",
+      recordKey: "patient_id",
+      recordValue: "{{patient.id}}",
+      messageTool: "patient.sendMessage",
+      timelineLabel: "cartella paziente",
+      inputs: "agenda studio, anagrafica paziente, consensi, canale di contatto, policy amministrative e disponibilita team",
+    },
+    restaurant: {
+      target: "cliente",
+      source: "Gestionale sala + prenotazioni",
+      recordKey: "customer_id",
+      recordValue: "{{customer.id}}",
+      messageTool: "customer.sendMessage",
+      timelineLabel: "scheda prenotazione",
+      inputs: "planning tavoli, turno sala, stato cucina, preferenze dichiarate, pagamenti e policy del locale",
+    },
+    clinic: {
+      target: "paziente",
+      source: "Gestionale poliambulatorio + portale paziente",
+      recordKey: "patient_id",
+      recordValue: "{{patient.id}}",
+      messageTool: "patient.sendMessage",
+      timelineLabel: "fascicolo operativo",
+      inputs: "agenda specialisti, prestazioni, documenti, consensi, canale sicuro, accettazione e policy privacy",
+    },
+    fitness: {
+      target: "socio",
+      source: "CRM fitness + calendario classi",
+      recordKey: "member_id",
+      recordValue: "{{member.id}}",
+      messageTool: "member.sendMessage",
+      timelineLabel: "profilo socio",
+      inputs: "CRM, calendario classi, trainer disponibili, abbonamento, presenze, consensi e policy dello studio",
+    },
+  };
+
+  const businessSpecs = [
+    { businessId: "dental", id: "dental-first-visit-intake", name: "Prima visita richiesta online", group: "dental-intake", category: "Nuovi pazienti", level: "Core", summary: "Raccoglie motivo, disponibilita e dati minimi prima di proporre slot di prima visita.", trigger: "patient.request.first_visit", tool: "clinic.scheduleFirstVisit", risk: "Medio", sla: "10 min", steps: ["classifica motivo e urgenza dichiarata", "verifica specialista e durata necessaria", "propone massimo tre slot compatibili", "registra fonte e consenso contatto"], guardrail: "Non formulare diagnosi e non promettere esiti clinici; dolore acuto o trauma seguono triage umano" },
+    { businessId: "dental", id: "dental-urgent-pain-triage", name: "Urgenza dolore o gonfiore", group: "dental-intake", category: "Triage urgenze", level: "Avanzato", summary: "Riconosce segnali di urgenza, prepara callback e libera uno slot protetto se disponibile.", trigger: "patient.report.urgent_pain", tool: "clinic.createUrgentCallback", risk: "Alto", sla: "3 min", steps: ["identifica parole chiave di urgenza e controindicazioni", "apre callback prioritario con operatore", "cerca slot urgenza o percorso alternativo", "invia istruzioni amministrative essenziali"], guardrail: "Sintomi severi, trauma o rischio sistemico vengono escalati subito a operatore e indicazioni di emergenza locali" },
+    { businessId: "dental", id: "dental-estimate-request", name: "Richiesta preventivo da WhatsApp", group: "dental-intake", category: "Preventivi", level: "Core", summary: "Distingue richiesta informativa da caso clinico e propone visita o stima solo quando appropriato.", trigger: "patient.request.estimate", tool: "crm.createTreatmentEstimateLead", risk: "Medio", sla: "15 min", steps: ["riconosce la prestazione richiesta", "controlla se serve visita preliminare", "fornisce range o costo visita quando ammesso", "crea task coordinatore per casi complessi"], guardrail: "Foto e descrizioni non bastano per diagnosi o piano cura; preventivi clinici richiedono valutazione professionale" },
+    { businessId: "dental", id: "dental-hygiene-reminder", name: "Reminder igiene programmata", group: "dental-agenda", category: "Reminder", level: "Core", summary: "Invia promemoria appuntamento, conferma presenza e gestisce richiesta di cambio orario.", trigger: "appointment.minus_48h.hygiene", tool: "messaging.sendAppointmentReminder", risk: "Basso", sla: "5 min", steps: ["verifica che l'appuntamento sia ancora valido", "invia reminder con conferma rapida", "gestisce richiesta di spostamento", "notifica segreteria se manca risposta"], guardrail: "Non inviare dettagli clinici sensibili in messaggi non protetti e rispettare quiet hours" },
+    { businessId: "dental", id: "dental-late-cancellation-waitlist", name: "Cancellazione tardiva e lista d'attesa", group: "dental-agenda", category: "Recupero slot", level: "Core", summary: "Libera lo slot, applica policy e propone il posto a pazienti compatibili in lista d'attesa.", trigger: "appointment.cancelled.late", tool: "agenda.offerSlotToWaitlist", risk: "Medio", sla: "5 min", steps: ["registra motivo e finestra di cancellazione", "valuta policy amministrativa", "seleziona candidati compatibili", "conferma il nuovo slot solo dopo accettazione"], guardrail: "Penali o addebiti richiedono policy nota e revisione segreteria in caso di contestazione" },
+    { businessId: "dental", id: "dental-recall-six-months", name: "Richiamo semestrale controllo", group: "dental-agenda", category: "Richiami", level: "Core", summary: "Identifica pazienti da richiamare e propone controllo o igiene secondo consenso marketing/servizio.", trigger: "recall.due.six_months", tool: "crm.scheduleRecallCampaign", risk: "Basso", sla: "1 giorno", steps: ["calcola richiamo dovuto", "separa comunicazione di servizio da marketing", "sceglie canale consentito", "aggiorna CRM dopo risposta o opt-out"], guardrail: "Rispettare consensi e opt-out; non includere dettagli clinici oltre il motivo generico del richiamo" },
+    { businessId: "dental", id: "dental-extraction-followup", name: "Follow-up post estrazione", group: "dental-care", category: "Follow-up clinico", level: "Core", summary: "Verifica recupero, raccoglie segnali di attenzione e crea callback se la risposta indica criticita.", trigger: "procedure.plus_24h.extraction", tool: "clinic.createPostProcedureFollowup", risk: "Medio", sla: "15 min", steps: ["invia messaggio breve di controllo", "classifica risposta in ok, dubbio o attenzione", "apre callback per segnali critici", "registra esito nella timeline paziente"], guardrail: "Nessuna prescrizione o modifica terapia via automazione; segnali clinici passano al professionista" },
+    { businessId: "dental", id: "dental-ortho-plan-onboarding", name: "Onboarding piano ortodontico", group: "dental-care", category: "Piani di cura", level: "Core", summary: "Prepara calendario controlli, documenti e prime istruzioni dopo accettazione piano.", trigger: "treatment_plan.accepted.ortho", tool: "clinic.createTreatmentJourney", risk: "Medio", sla: "2 ore", steps: ["verifica accettazione economica e consensi", "propone sequenza primi appuntamenti", "crea checklist documentale", "invia riepilogo pratico non clinico"], guardrail: "Le modifiche al piano clinico restano al medico; automazione gestisce solo coordinamento e documenti" },
+    { businessId: "dental", id: "dental-lab-prosthesis-ready", name: "Protesi pronta dal laboratorio", group: "dental-care", category: "Laboratorio", level: "Avanzato", summary: "Coordina arrivo manufatto, controllo qualita interno e appuntamento di consegna/prova.", trigger: "lab.case.ready", tool: "lab.createDeliveryAppointment", risk: "Medio", sla: "4 ore", steps: ["verifica corrispondenza caso e paziente", "richiede controllo qualita interno", "sblocca slot di prova o consegna", "notifica paziente dopo conferma dello studio"], guardrail: "Non comunicare disponibilita al paziente prima del controllo interno e del via libera del medico" },
+    { businessId: "dental", id: "dental-consent-missing", name: "Consenso informato mancante", group: "dental-admin", category: "Consensi", level: "Core", summary: "Identifica il documento mancante e invia link sicuro prima dell'appuntamento.", trigger: "appointment.minus_24h.consent_missing", tool: "documents.createSecureConsentLink", risk: "Medio", sla: "10 min", steps: ["mappa documenti richiesti per prestazione", "genera link di firma sicuro", "invia reminder essenziale", "avvisa segreteria se resta mancante"], guardrail: "Non allegare moduli compilati in chat; massimo due reminder e firma sempre su canale protetto" },
+    { businessId: "dental", id: "dental-payment-balance", name: "Saldo prestazione in sospeso", group: "dental-admin", category: "Pagamenti", level: "Core", summary: "Riconcilia importi, crea link pagamento e segnala contestazioni alla segreteria.", trigger: "billing.balance_due", tool: "payment.createPatientBalanceLink", risk: "Alto", sla: "30 min", steps: ["verifica importo e causale", "rimuove duplicati o acconti gia registrati", "crea link pagamento sicuro", "passa contestazioni a operatore"], guardrail: "Mai chiedere numeri carta in chat; rateizzazioni e contestazioni richiedono revisione umana" },
+    { businessId: "dental", id: "dental-health-invoice", name: "Richiesta fattura sanitaria", group: "dental-admin", category: "Fatturazione", level: "Core", summary: "Raccoglie dati fiscali mancanti, controlla duplicati e prepara documento per invio.", trigger: "patient.request.health_invoice", tool: "accounting.createHealthInvoiceDraft", risk: "Medio", sla: "1 giorno", steps: ["identifica prestazione e pagamento", "chiede solo campi mancanti", "controlla duplicati", "prepara bozza nel gestionale"], guardrail: "Dati fiscali completi solo in gestionale o link sicuro; emissione finale secondo policy studio" },
+    { businessId: "dental", id: "dental-sterilization-stock", name: "Scorte sterilizzazione sotto soglia", group: "dental-ops", category: "Materiali critici", level: "Core", summary: "Prevede fabbisogno kit, verifica ordini aperti e prepara riordino entro budget.", trigger: "inventory.sterilization_below_threshold", tool: "inventory.createSterilizationReorder", risk: "Medio", sla: "2 ore", steps: ["riconcilia giacenza e consumo previsto", "calcola fabbisogno a sette giorni", "consolida ordini aperti", "notifica responsabile per approvazione se sopra soglia"], guardrail: "Materiali critici non vengono sostituiti con equivalenti non approvati dal responsabile sanitario", target: "team" },
+    { businessId: "dental", id: "dental-chair-breakdown", name: "Riunito non disponibile", group: "dental-ops", category: "Continuita studio", level: "Avanzato", summary: "Valuta impatto agenda, apre ticket tecnico e riprotegge pazienti o sale alternative.", trigger: "asset.dental_chair_unavailable", tool: "ops.recoverDentalChairSchedule", risk: "Alto", sla: "15 min", steps: ["conferma indisponibilita e durata stimata", "identifica appuntamenti impattati", "cerca sala o riunito alternativo", "notifica pazienti solo dopo piano approvato"], guardrail: "Non spostare prestazioni che richiedono attrezzatura specifica senza validazione del medico", target: "team" },
+    { businessId: "dental", id: "dental-impression-material-reorder", name: "Riordino materiali impronte", group: "dental-ops", category: "Materiali laboratorio", level: "Core", summary: "Monitora consumo, lotti e scadenze per materiali impronte e scanner consumables.", trigger: "inventory.impression_material_low", tool: "inventory.createClinicalMaterialOrder", risk: "Medio", sla: "4 ore", steps: ["verifica consumo previsto", "esclude lotti in scadenza", "sceglie fornitore e quantita", "crea ordine in bozza per approvazione"], guardrail: "Prodotti alternativi richiedono approvazione clinica e tracciamento del lotto", target: "team" },
+
+    { businessId: "restaurant", id: "restaurant-table-booking", name: "Nuova prenotazione tavolo", group: "restaurant-reservations", category: "Tavoli", level: "Core", summary: "Conferma disponibilita, turno e preferenze essenziali evitando doppie assegnazioni.", trigger: "reservation.request.table", tool: "restaurant.reserveTable", risk: "Basso", sla: "5 min", steps: ["normalizza data, ora e coperti", "controlla capienza e turno", "registra preferenze operative", "invia conferma con policy ritardo"], guardrail: "Non promettere tavoli specifici se non bloccati e non memorizzare dettagli sensibili non necessari" },
+    { businessId: "restaurant", id: "restaurant-group-deposit", name: "Gruppo con caparra", group: "restaurant-reservations", category: "Gruppi", level: "Avanzato", summary: "Quota menu e caparra, blocca disponibilita e monitora pagamento entro deadline.", trigger: "reservation.request.large_party", tool: "restaurant.createGroupDepositHold", risk: "Alto", sla: "20 min", steps: ["verifica capienza e impatto cucina", "propone menu o condizioni gruppo", "genera link caparra con scadenza", "conferma solo a pagamento registrato"], guardrail: "Nessun blocco definitivo senza caparra quando prevista; allergie passano a conferma del responsabile sala" },
+    { businessId: "restaurant", id: "restaurant-waitlist-fill", name: "Lista d'attesa per cancellazione", group: "restaurant-reservations", category: "Waitlist", level: "Core", summary: "Quando si libera un tavolo, contatta candidati compatibili e conferma il primo che accetta.", trigger: "reservation.cancelled.table_released", tool: "restaurant.offerReleasedTable", risk: "Medio", sla: "2 min", steps: ["seleziona candidati per coperti e fascia", "invia offerta con hold breve", "conferma il primo accettato", "chiude offerte residue"], guardrail: "Massimo un'offerta aperta per tavolo alla volta e rispetto opt-out comunicazioni" },
+    { businessId: "restaurant", id: "restaurant-allergy-note", name: "Allergia comunicata prima del servizio", group: "restaurant-service", category: "Sicurezza alimentare", level: "Core", summary: "Registra allergia dichiarata, avvisa cucina e richiede conferma del responsabile sala.", trigger: "reservation.note.allergy", tool: "restaurant.flagAllergyOnReservation", risk: "Alto", sla: "5 min", steps: ["identifica allergene e coperto coinvolto", "aggiorna prenotazione e comanda futura", "notifica sala e cucina", "richiede conferma prima del servizio"], guardrail: "Non garantire assenza assoluta di contaminazione se il locale non puo certificarla; decisione finale al responsabile", target: "team" },
+    { businessId: "restaurant", id: "restaurant-table-delay-recovery", name: "Tavolo in ritardo", group: "restaurant-service", category: "Recovery sala", level: "Core", summary: "Stima attesa reale, aggiorna cliente e propone aperitivo o alternativa secondo policy.", trigger: "service.table_delay", tool: "restaurant.createTableDelayRecovery", risk: "Medio", sla: "2 min", steps: ["calcola ETA prudente", "aggiorna host e cliente", "propone compensazione entro soglia", "riapre escalation se l'attesa supera il nuovo ETA"], guardrail: "Non inventare tempi e non offrire compensazioni fuori policy senza responsabile" },
+    { businessId: "restaurant", id: "restaurant-dish-complaint", name: "Reclamo su piatto", group: "restaurant-service", category: "Recovery servizio", level: "Core", summary: "Raccoglie feedback, avvisa sala/cucina e propone remake, sostituzione o conto rivisto.", trigger: "service.complaint.dish", tool: "restaurant.openServiceRecovery", risk: "Alto", sla: "2 min", steps: ["classifica problema e urgenza", "notifica cameriere responsabile e cucina", "seleziona rimedio ammesso", "registra esito nel turno"], guardrail: "Rimborsi o sconti sopra soglia richiedono approvazione; allergie o sicurezza alimentare diventano incidente", target: "team" },
+    { businessId: "restaurant", id: "restaurant-critical-stock", name: "Ingrediente critico sotto soglia", group: "restaurant-kitchen", category: "Stock cucina", level: "Core", summary: "Controlla menu del giorno, prenotazioni e fornitori per evitare piatti non servibili.", trigger: "inventory.ingredient_low", tool: "kitchen.createIngredientRecoveryPlan", risk: "Medio", sla: "30 min", steps: ["valida consumo previsto", "identifica piatti impattati", "cerca ordine urgente o sostituzione", "aggiorna briefing sala"], guardrail: "Sostituzioni allergeni o menu degustazione richiedono chef o responsabile", target: "team" },
+    { businessId: "restaurant", id: "restaurant-prep-plan", name: "Prep list giornaliera", group: "restaurant-kitchen", category: "Mise en place", level: "Core", summary: "Genera preparazioni prioritarie da prenotazioni, storico consumi e menu del turno.", trigger: "kitchen.prep_plan_due", tool: "kitchen.buildDailyPrepList", risk: "Basso", sla: "1 ora", steps: ["calcola coperti previsti", "stima consumo per piatto", "ordina preparazioni per criticita", "segnala colli di bottiglia o stock basso"], guardrail: "Il piano e' una proposta operativa; chef puo modificarlo prima del servizio", target: "team" },
+    { businessId: "restaurant", id: "restaurant-supplier-delay", name: "Consegna fornitore in ritardo", group: "restaurant-kitchen", category: "Fornitori", level: "Avanzato", summary: "Misura impatto sul servizio, trova fornitore alternativo e aggiorna menu o briefing.", trigger: "supplier.delivery_delayed", tool: "procurement.activateRestaurantBackupSupplier", risk: "Alto", sla: "20 min", steps: ["verifica ETA e prodotti critici", "calcola impatto su menu", "cerca fornitore alternativo approvato", "notifica sala su piatti non disponibili"], guardrail: "Acquisti fuori lista o sopra budget richiedono approvazione; tracciabilita ingredienti obbligatoria", target: "team" },
+    { businessId: "restaurant", id: "restaurant-private-event-lead", name: "Richiesta evento privato", group: "restaurant-revenue", category: "Private dining", level: "Core", summary: "Qualifica data, budget e formato, poi crea proposta o task commerciale.", trigger: "event.request.private_dining", tool: "restaurant.createPrivateEventQuote", risk: "Medio", sla: "2 ore", steps: ["verifica disponibilita sala", "classifica formato evento", "calcola proposta base", "crea follow-up commerciale con deadline"], guardrail: "Nessun blocco sala senza conferma manager e caparra quando prevista" },
+    { businessId: "restaurant", id: "restaurant-deposit-declined", name: "Caparra evento rifiutata", group: "restaurant-revenue", category: "Pagamenti", level: "Core", summary: "Rigenera link sicuro, ricorda deadline e libera opzione se non arriva pagamento.", trigger: "payment.deposit_declined", tool: "payment.createRestaurantDepositLink", risk: "Alto", sla: "5 min", steps: ["classifica errore pagamento", "crea link aggiornato", "comunica scadenza reale", "libera opzione se la deadline passa"], guardrail: "Mai chiedere dati carta in chat; proroghe caparra richiedono responsabile" },
+    { businessId: "restaurant", id: "restaurant-company-invoice", name: "Fattura cena aziendale", group: "restaurant-revenue", category: "Fatturazione", level: "Core", summary: "Raccoglie dati fiscali, riconcilia scontrino e prepara fattura o cortesia.", trigger: "customer.request.company_invoice", tool: "accounting.createRestaurantInvoiceDraft", risk: "Medio", sla: "1 giorno", steps: ["identifica transazione", "chiede solo dati mancanti", "controlla duplicati", "genera bozza per invio"], guardrail: "Dati fiscali completi non vanno copiati in chat libera; emissione segue regole contabili" },
+    { businessId: "restaurant", id: "restaurant-negative-review", name: "Recensione negativa pubblica", group: "restaurant-reputation", category: "Reputation", level: "Avanzato", summary: "Raccoglie contesto del servizio, prepara risposta pubblica e apre recovery privato.", trigger: "review.public.negative", tool: "reputation.prepareRestaurantReviewResponse", risk: "Alto", sla: "4 ore", steps: ["riassume fatto e tono", "raccoglie contesto interno", "prepara bozza pubblica neutra", "apre contatto privato se identificabile"], guardrail: "Non rivelare dati del cliente o dettagli del conto; risposta pubblica richiede revisione umana", target: "team" },
+    { businessId: "restaurant", id: "restaurant-feedback-request", name: "Feedback post cena", group: "restaurant-reputation", category: "Customer care", level: "Core", summary: "Invia una richiesta feedback leggera ai clienti prenotati rispettando consenso e frequenza.", trigger: "reservation.plus_18h.feedback_due", tool: "crm.sendRestaurantFeedbackRequest", risk: "Basso", sla: "1 ora", steps: ["verifica consenso e frequenza", "sceglie messaggio breve", "instrada feedback basso a responsabile", "aggiorna profilo cliente"], guardrail: "Nessun incentivo in cambio di recensioni e stop immediato dopo opt-out" },
+    { businessId: "restaurant", id: "restaurant-birthday-loyalty", name: "Occasione speciale o compleanno", group: "restaurant-reputation", category: "Loyalty", level: "Core", summary: "Trasforma note occasione speciale in micro-task sala e messaggio personalizzato.", trigger: "reservation.note.special_occasion", tool: "restaurant.createSpecialOccasionTask", risk: "Basso", sla: "10 min", steps: ["classifica occasione dichiarata", "crea task sala discreto", "verifica eventuale omaggio ammesso", "registra preferenza senza dati sensibili"], guardrail: "Usare solo informazioni fornite dal cliente e non condividere dettagli personali non necessari", target: "team" },
+
+    { businessId: "clinic", id: "clinic-specialist-first-visit", name: "Prima visita specialistica", group: "clinic-booking", category: "Nuove visite", level: "Core", summary: "Qualifica richiesta, specialita e documenti necessari prima di proporre appuntamenti.", trigger: "patient.request.specialist_visit", tool: "clinic.bookSpecialistVisit", risk: "Medio", sla: "10 min", steps: ["classifica specialita richiesta", "verifica durata e preparazione", "propone slot compatibili", "registra documenti da portare"], guardrail: "Non fare triage diagnostico; sintomi urgenti o peggioramento passano a operatore" },
+    { businessId: "clinic", id: "clinic-exam-preparation", name: "Esame con preparazione", group: "clinic-booking", category: "Preparazione esami", level: "Core", summary: "Invia istruzioni amministrative e preparazione esame con conferma lettura.", trigger: "exam.minus_72h.preparation_due", tool: "clinic.sendExamPreparation", risk: "Medio", sla: "15 min", steps: ["seleziona istruzioni approvate per esame", "verifica documenti richiesti", "invia reminder con conferma lettura", "apre task se manca conferma"], guardrail: "Usare solo istruzioni validate dalla struttura; domande cliniche vanno al personale sanitario" },
+    { businessId: "clinic", id: "clinic-cancellation-waitlist", name: "Cancellazione visita e lista d'attesa", group: "clinic-booking", category: "Agenda", level: "Core", summary: "Libera slot, propone recupero e contatta pazienti compatibili in lista d'attesa.", trigger: "appointment.cancelled.clinic", tool: "clinic.offerCancelledSlot", risk: "Medio", sla: "5 min", steps: ["registra cancellazione", "trova candidati compatibili", "offre slot con hold breve", "conferma solo dopo accettazione"], guardrail: "Priorita cliniche manuali e percorsi fragili richiedono revisione operatore" },
+    { businessId: "clinic", id: "clinic-referral-missing", name: "Impegnativa o prescrizione mancante", group: "clinic-documents", category: "Documenti", level: "Core", summary: "Richiede documento mancante su link sicuro e segnala rischio blocco accettazione.", trigger: "appointment.minus_24h.referral_missing", tool: "documents.createMedicalUploadLink", risk: "Medio", sla: "10 min", steps: ["identifica documento mancante", "genera link upload sicuro", "invia reminder essenziale", "avvisa accettazione se resta incompleto"], guardrail: "Non ricevere documenti sanitari in chat libera e limitare reminder a quelli necessari" },
+    { businessId: "clinic", id: "clinic-consent-missing", name: "Consenso clinico mancante", group: "clinic-documents", category: "Consensi", level: "Core", summary: "Associa consenso corretto alla prestazione e raccoglie firma prima dell'appuntamento.", trigger: "appointment.minus_24h.medical_consent_missing", tool: "documents.createClinicalConsentSession", risk: "Medio", sla: "10 min", steps: ["seleziona modulo aggiornato", "crea sessione di firma sicura", "monitora completamento", "avvisa accettazione se incompleto"], guardrail: "Consensi non vengono precompilati con dati sensibili in canali non protetti" },
+    { businessId: "clinic", id: "clinic-report-ready", name: "Referto disponibile", group: "clinic-documents", category: "Referti", level: "Avanzato", summary: "Notifica disponibilita referto su portale e gestisce richiesta di assistenza accesso.", trigger: "report.ready", tool: "portal.notifyReportReady", risk: "Alto", sla: "30 min", steps: ["verifica pubblicazione e destinatario", "invia notifica senza contenuto clinico", "gestisce problemi accesso", "registra consegna o mancato accesso"], guardrail: "Nessun referto via chat o email non sicura; deleghe e minori richiedono regole dedicate" },
+    { businessId: "clinic", id: "clinic-post-visit-followup", name: "Follow-up post visita", group: "clinic-care", category: "Continuita", level: "Core", summary: "Invia promemoria di controllo amministrativo e raccoglie dubbi da instradare allo specialista.", trigger: "visit.plus_48h.followup_due", tool: "clinic.createVisitFollowup", risk: "Medio", sla: "2 ore", steps: ["verifica se follow-up previsto", "invia promemoria non clinico", "raccoglie dubbi del paziente", "crea callback per quesiti sanitari"], guardrail: "Risposte cliniche e modifica terapia restano allo specialista o personale autorizzato" },
+    { businessId: "clinic", id: "clinic-after-procedure-symptom", name: "Sintomo segnalato dopo procedura", group: "clinic-care", category: "Segnalazioni", level: "Avanzato", summary: "Classifica segnalazione, apre callback prioritario e allega contesto minimo al medico.", trigger: "patient.report.after_procedure_symptom", tool: "clinic.createPostProcedureTriageTask", risk: "Alto", sla: "3 min", steps: ["riconosce segnali di attenzione", "apre callback con priorita adeguata", "raccoglie contesto minimo", "notifica medico o coordinatore"], guardrail: "Emergenze o peggioramenti severi ricevono indicazione di contattare servizi urgenti e passano a operatore" },
+    { businessId: "clinic", id: "clinic-multispecialty-plan", name: "Percorso multi-specialista", group: "clinic-care", category: "Coordinamento", level: "Core", summary: "Coordina visite correlate, documenti e sequenza consigliata dai professionisti.", trigger: "care_plan.multispecialty_created", tool: "clinic.createCarePlanSchedule", risk: "Medio", sla: "4 ore", steps: ["legge dipendenze operative", "propone sequenza appuntamenti", "crea checklist documentale", "aggiorna paziente con riepilogo pratico"], guardrail: "Sequenza clinica decisa dai professionisti; automazione gestisce solo coordinamento" },
+    { businessId: "clinic", id: "clinic-insurance-authorization", name: "Autorizzazione assicurativa", group: "clinic-admin", category: "Assicurazioni", level: "Core", summary: "Verifica dati polizza, raccoglie documenti e monitora autorizzazione prima della visita.", trigger: "insurance.authorization_needed", tool: "insurance.prepareAuthorizationRequest", risk: "Medio", sla: "1 giorno", steps: ["identifica requisiti assicurazione", "richiede documenti mancanti su canale sicuro", "prepara pratica", "notifica accettazione sullo stato"], guardrail: "Non garantire copertura economica prima di autorizzazione formale; dati sanitari solo su canali protetti" },
+    { businessId: "clinic", id: "clinic-balance-payment", name: "Pagamento ticket o saldo", group: "clinic-admin", category: "Pagamenti", level: "Core", summary: "Crea link pagamento sicuro e riconcilia incasso con appuntamento o fattura.", trigger: "billing.clinic_balance_due", tool: "payment.createClinicBalanceLink", risk: "Alto", sla: "30 min", steps: ["verifica importo dovuto", "esclude voci coperte o esenti", "genera link sicuro", "aggiorna accettazione dopo pagamento"], guardrail: "Nessun dato carta in chat e contestazioni o esenzioni dubbie passano a operatore" },
+    { businessId: "clinic", id: "clinic-record-copy-request", name: "Richiesta copia documenti", group: "clinic-admin", category: "Privacy", level: "Core", summary: "Verifica identita, deleghe e tipo documento prima di preparare consegna sicura.", trigger: "patient.request.records_copy", tool: "privacy.createMedicalRecordRequest", risk: "Alto", sla: "2 giorni", steps: ["classifica documento richiesto", "verifica identita e diritto di accesso", "prepara consegna su canale sicuro", "registra audit minimale"], guardrail: "Documenti sanitari solo a soggetti autorizzati e mai tramite canali non protetti" },
+    { businessId: "clinic", id: "clinic-room-unavailable", name: "Sala ambulatorio indisponibile", group: "clinic-ops", category: "Continuita operativa", level: "Avanzato", summary: "Valuta appuntamenti impattati, cerca sala alternativa e ripianifica con consenso operativo.", trigger: "facility.room_unavailable", tool: "ops.recoverClinicRoomSchedule", risk: "Alto", sla: "15 min", steps: ["conferma indisponibilita", "mappa visite impattate", "trova sale compatibili", "notifica pazienti solo dopo piano approvato"], guardrail: "Prestazioni con attrezzature specifiche richiedono conferma del referente sanitario", target: "team" },
+    { businessId: "clinic", id: "clinic-doctor-delay", name: "Medico in ritardo", group: "clinic-ops", category: "Agenda live", level: "Core", summary: "Aggiorna ETA, ricalcola code e informa accettazione o pazienti in arrivo.", trigger: "provider.delay.reported", tool: "clinic.updateProviderDelayPlan", risk: "Medio", sla: "5 min", steps: ["calcola ritardo previsto", "ordina appuntamenti impattati", "avvisa accettazione", "invia aggiornamento solo ai pazienti coinvolti"], guardrail: "Non condividere motivi personali del ritardo e non promettere orari non confermati" },
+    { businessId: "clinic", id: "clinic-equipment-maintenance", name: "Manutenzione apparecchiatura", group: "clinic-ops", category: "Asset sanitari", level: "Core", summary: "Trova finestra, verifica impatto agenda e coordina tecnico con controllo finale.", trigger: "asset.medical_equipment_maintenance_due", tool: "maintenance.scheduleMedicalEquipmentWork", risk: "Medio", sla: "1 giorno", steps: ["classifica urgenza e obbligatorieta", "trova finestra compatibile", "blocca sala se necessario", "programma controllo post intervento"], guardrail: "Scadenze di sicurezza non si rinviano senza responsabile; asset non certificati restano non disponibili", target: "team" },
+
+    { businessId: "fitness", id: "fitness-trial-booking", name: "Prenotazione prova gratuita", group: "fitness-sales", category: "Trial", level: "Core", summary: "Qualifica obiettivo, livello e preferenze prima di proporre una classe o consulenza.", trigger: "lead.request.trial", tool: "fitness.bookTrialSession", risk: "Basso", sla: "10 min", steps: ["classifica esperienza e obiettivo", "esclude classi non adatte al livello", "propone slot compatibile", "invia istruzioni di arrivo e policy cancellazione"], guardrail: "Non dare consigli medici o promesse di risultato; condizioni fisiche dichiarate passano a trainer" },
+    { businessId: "fitness", id: "fitness-lead-recovery", name: "Lead inattivo dopo prova", group: "fitness-sales", category: "Conversione", level: "Core", summary: "Invia follow-up personalizzato e crea task consulente se il segnale e' caldo.", trigger: "lead.trial_completed.no_membership", tool: "crm.sendTrialFollowup", risk: "Basso", sla: "1 giorno", steps: ["verifica partecipazione e feedback", "sceglie proposta coerente", "invia un solo follow-up", "crea task consulente per risposte positive"], guardrail: "Rispetta opt-out e non usare pressione o scarsita artificiale" },
+    { businessId: "fitness", id: "fitness-referral-invite", name: "Invito referral", group: "fitness-sales", category: "Referral", level: "Core", summary: "Crea invito amico solo dopo consenso e collega eventuale premio al regolamento.", trigger: "member.request.referral_invite", tool: "crm.createReferralInvite", risk: "Basso", sla: "5 min", steps: ["verifica consenso del socio", "genera link invito", "spiega premio e condizioni", "limita numero inviti nel periodo"], guardrail: "Non contattare terzi senza base valida; il socio condivide il link direttamente quando richiesto" },
+    { businessId: "fitness", id: "fitness-class-waitlist", name: "Posto libero da waitlist", group: "fitness-classes", category: "Waitlist classi", level: "Core", summary: "Quando si libera un posto, offre lo slot ai soci in lista e aggiorna roster.", trigger: "class.spot_released", tool: "fitness.offerClassSpot", risk: "Medio", sla: "2 min", steps: ["seleziona primo socio compatibile", "invia offerta con scadenza breve", "conferma su accettazione", "passa al successivo se scade"], guardrail: "Rispetta capienza sala e policy late cancel; nessun overbooking automatico" },
+    { businessId: "fitness", id: "fitness-trainer-substitution", name: "Trainer indisponibile", group: "fitness-classes", category: "Sostituzioni", level: "Avanzato", summary: "Cerca sostituto qualificato, aggiorna classe e comunica variazione ai partecipanti.", trigger: "trainer.unavailable", tool: "fitness.findQualifiedSubstituteTrainer", risk: "Alto", sla: "20 min", steps: ["identifica certificazioni necessarie", "contatta sostituti disponibili", "aggiorna planning", "informa iscritti se cambia formato o livello"], guardrail: "Nessuna classe con trainer non qualificato; cancellazione se non esiste sostituto idoneo" },
+    { businessId: "fitness", id: "fitness-class-underbooked", name: "Classe sotto soglia", group: "fitness-classes", category: "Ottimizzazione classi", level: "Core", summary: "Monitora iscritti, propone promo o consolidamento senza cancellazioni improvvise.", trigger: "class.underbooked.minus_12h", tool: "fitness.createUnderbookedClassPlan", risk: "Medio", sla: "30 min", steps: ["verifica soglia e trend", "attiva invito mirato se consentito", "propone consolidamento con classe simile", "scala decisione cancellazione al manager"], guardrail: "Cancellazioni last minute richiedono approvazione e comunicazione con alternativa", target: "team" },
+    { businessId: "fitness", id: "fitness-card-declined", name: "Pagamento abbonamento rifiutato", group: "fitness-membership", category: "Pagamenti", level: "Core", summary: "Invia link sicuro per aggiornare metodo e protegge accesso secondo grace period.", trigger: "payment.membership_declined", tool: "payment.createMembershipUpdateLink", risk: "Alto", sla: "5 min", steps: ["classifica rifiuto gateway", "genera link sicuro", "comunica grace period", "scala sospensione secondo policy"], guardrail: "Mai chiedere carta in chat e sospensioni accesso seguono termini sottoscritti" },
+    { businessId: "fitness", id: "fitness-freeze-request", name: "Richiesta freeze abbonamento", group: "fitness-membership", category: "Variazioni", level: "Core", summary: "Verifica policy, durata e documenti richiesti prima di sospendere il piano.", trigger: "member.request.freeze", tool: "membership.prepareFreezeChange", risk: "Medio", sla: "2 ore", steps: ["verifica eleggibilita e limiti", "calcola date freeze e riattivazione", "richiede documenti solo se previsti", "aggiorna accessi dopo conferma"], guardrail: "Motivi sanitari sono trattati con minimizzazione; eccezioni richiedono manager" },
+    { businessId: "fitness", id: "fitness-renewal-due", name: "Rinnovo abbonamento in scadenza", group: "fitness-membership", category: "Rinnovi", level: "Core", summary: "Propone rinnovo coerente con utilizzo e preferenze, evitando follow-up eccessivi.", trigger: "membership.minus_14d.renewal_due", tool: "membership.createRenewalOffer", risk: "Basso", sla: "1 giorno", steps: ["verifica piano e scadenza", "seleziona proposta coerente", "invia riepilogo con link", "crea task consulente se il socio chiede confronto"], guardrail: "Niente claims di risultato fisico e massimo un follow-up dopo mancata risposta" },
+    { businessId: "fitness", id: "fitness-minor-injury", name: "Piccolo infortunio in classe", group: "fitness-safety", category: "Sicurezza", level: "Avanzato", summary: "Apre incidente, raccoglie evidenze minime e attiva follow-up del responsabile.", trigger: "class.incident.minor_injury", tool: "safety.createFitnessIncident", risk: "Alto", sla: "2 min", steps: ["registra incidente con dati minimi", "notifica responsabile", "crea follow-up socio", "blocca ulteriori automazioni commerciali"], guardrail: "Non dare consigli medici; emergenze seguono procedura locale e chiamata ai servizi appropriati" },
+    { businessId: "fitness", id: "fitness-equipment-out-of-service", name: "Attrezzatura fuori servizio", group: "fitness-safety", category: "Manutenzione", level: "Core", summary: "Segnala blocco attrezzatura, avvisa trainer e modifica classi impattate se necessario.", trigger: "equipment.out_of_service", tool: "maintenance.createFitnessEquipmentTicket", risk: "Medio", sla: "10 min", steps: ["marca attrezzatura non disponibile", "identifica classi impattate", "apre ticket manutenzione", "notifica trainer con alternative"], guardrail: "Attrezzatura segnalata non torna disponibile senza controllo responsabile", target: "team" },
+    { businessId: "fitness", id: "fitness-capacity-check", name: "Capienza sala quasi piena", group: "fitness-safety", category: "Capienza", level: "Core", summary: "Monitora prenotazioni, check-in e no-show per rispettare limiti di sala.", trigger: "class.capacity.near_limit", tool: "fitness.enforceClassCapacity", risk: "Medio", sla: "1 min", steps: ["verifica capienza sala", "blocca nuove prenotazioni se necessario", "attiva waitlist", "notifica front desk su overflow"], guardrail: "Nessun superamento capienza per eccezioni commerciali", target: "team" },
+    { businessId: "fitness", id: "fitness-missed-sessions", name: "Socio assente da tre settimane", group: "fitness-retention", category: "Churn prevention", level: "Core", summary: "Rileva calo frequenza e propone check-in leggero o classe adatta al rientro.", trigger: "member.attendance_drop", tool: "crm.createAttendanceDropNudge", risk: "Basso", sla: "1 giorno", steps: ["misura calo rispetto allo storico", "seleziona messaggio empatico", "propone opzione rientro", "crea task trainer per soci ad alto valore"], guardrail: "Non fare inferenze su salute o vita privata; rispetto opt-out e tono non giudicante" },
+    { businessId: "fitness", id: "fitness-low-nps-recovery", name: "Feedback NPS basso", group: "fitness-retention", category: "Recovery", level: "Avanzato", summary: "Classifica causa, apre recovery manager e sospende richieste recensione pubblica.", trigger: "feedback.nps_low", tool: "crm.openMemberRecoveryCase", risk: "Alto", sla: "4 ore", steps: ["riassume feedback e area impattata", "apre task manager", "propone azione correttiva", "pianifica follow-up dopo intervento"], guardrail: "Non contestare feedback del socio e non offrire compensazioni fuori policy senza approvazione" },
+    { businessId: "fitness", id: "fitness-milestone-community", name: "Milestone partecipazione", group: "fitness-retention", category: "Community", level: "Core", summary: "Riconosce traguardi di frequenza e crea messaggio o badge senza gamification invasiva.", trigger: "member.milestone.reached", tool: "crm.createMemberMilestone", risk: "Basso", sla: "1 giorno", steps: ["verifica milestone reale", "sceglie riconoscimento appropriato", "notifica trainer o socio", "registra badge nel profilo"], guardrail: "Nessuna pubblicazione social senza consenso esplicito e nessun confronto pubblico tra soci" },
+  ];
+
   function createFlow(spec) {
     const ids = {
       trigger: `${spec.id}-trigger`,
@@ -340,6 +507,7 @@
 
     return {
       id: spec.id,
+      businessId: "hospitality",
       name: spec.name,
       group: spec.group,
       category: spec.category,
@@ -387,5 +555,71 @@
     };
   }
 
-  window.BNBFLOW_CATALOG = { groups, existing, flows: specs.map(createFlow) };
+  function createBusinessFlow(spec) {
+    const business = businesses.find((item) => item.id === spec.businessId) || businesses[0];
+    const runtime = businessRuntime[spec.businessId] || businessRuntime.dental;
+    const target = spec.target || runtime.target;
+    const ids = {
+      trigger: `${spec.id}-trigger`,
+      agent: `${spec.id}-agent`,
+      guardrail: `${spec.id}-guardrail`,
+      tool: `${spec.id}-tool`,
+      message: `${spec.id}-message`,
+    };
+    const procedure = spec.steps.map((step, index) => `${index + 1}. ${step}.`).join("\n");
+    const objective = spec.objective || `gestire "${spec.name}" con un esito operativo verificabile per ${target} e team`;
+    const template = spec.template || `${spec.id.replaceAll("-", "_")}_update`;
+
+    return {
+      id: spec.id,
+      businessId: spec.businessId,
+      name: spec.name,
+      group: spec.group,
+      category: spec.category,
+      level: spec.level,
+      summary: spec.summary,
+      trigger: spec.trigger,
+      metrics: { sla: spec.sla, risk: spec.risk, automations: "2 tool" },
+      simulationOrder: Object.values(ids),
+      edges: [[ids.trigger, ids.agent], [ids.agent, ids.guardrail], [ids.guardrail, ids.tool], [ids.tool, ids.message]],
+      nodes: [
+        {
+          id: ids.trigger, type: "trigger", x: 42, y: 252, name: spec.name,
+          description: `Evento operativo in ingresso per ${business.name}: ${spec.summary}`,
+          condition: "business.status == 'active'",
+          params: { event: spec.trigger, source: runtime.source, business_id: spec.businessId, [runtime.recordKey]: runtime.recordValue },
+          guardrail: "Il payload viene deduplicato e validato prima di avviare il flusso.",
+        },
+        {
+          id: ids.agent, type: "agent", x: 326, y: 112, name: `Agente ${spec.category}`,
+          description: `Analizza il caso e decide come ${objective}.`, condition: "event.validation == 'pass'",
+          prompt: `Sei il sotto-agente ${spec.category} di ${business.name}, ${business.type.toLowerCase()}.\n\nObiettivo: ${objective}.\n\nContesto disponibile: ${spec.inputs || runtime.inputs}. Usa solo dati presenti nei sistemi collegati; se manca un dato decisivo, chiedilo oppure passa il caso al team.\n\nProcedura:\n${procedure}\n\nRegole operative: ${spec.guardrail}. Comunica con tono professionale, concreto e adatto al business. Non dichiarare mai completata un'azione finche il relativo tool non restituisce esito positivo. Registra decisioni, eccezioni e fallback nella ${runtime.timelineLabel}.`,
+          guardrail: spec.guardrail,
+        },
+        {
+          id: ids.guardrail, type: "guardrail", x: 326, y: 392, name: "Verifica policy e approvazioni",
+          description: "Controlla prerequisiti, autorizzazioni, privacy, soglie economiche e casi da passare al team.",
+          condition: "agent.confidence >= 0.85 && policy.status == 'verified'",
+          params: { checks: ["policy", "authorization", "data_minimization", "human_threshold"], failure_route: "ops.createStaffTask" },
+          guardrail: spec.guardrail,
+        },
+        {
+          id: ids.tool, type: "tool", x: 618, y: 154, name: spec.toolLabel || "Esegui azione operativa",
+          description: `Esegue l'azione principale tramite ${spec.tool}.`, condition: "guardrail.status == 'pass'", tool: spec.tool,
+          params: { [runtime.recordKey]: runtime.recordValue, business_id: spec.businessId, dry_run: false, ...(spec.params || {}) },
+          guardrail: "Verifica la risposta del tool e annota l'esito; timeout o errore aprono un task al team.",
+        },
+        {
+          id: ids.message, type: "message", x: 900, y: 252,
+          name: target === "team" ? "Notifica team e registra" : `Aggiorna ${target} e gestionale`,
+          description: "Comunica l'esito sul canale corretto e chiude il ciclo con una nota operativa.",
+          condition: "tool.status in ['succeeded','needs_attention']", tool: target === "team" ? "team.notify" : runtime.messageTool,
+          params: { template, add_timeline_note: true, target },
+          guardrail: "Invia solo dati necessari e non nasconde errori o azioni ancora in attesa.",
+        },
+      ],
+    };
+  }
+
+  window.BNBFLOW_CATALOG = { groups, businesses, existing, flows: specs.map(createFlow), businessFlows: businessSpecs.map(createBusinessFlow) };
 })();

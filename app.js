@@ -26,7 +26,7 @@ const paletteItems = [
   {
     type: "trigger",
     title: "Trigger evento",
-    description: "Webhook PMS, OTA, form o smart lock.",
+    description: "Webhook gestionale, CRM, form o dispositivo.",
   },
   {
     type: "agent",
@@ -36,12 +36,12 @@ const paletteItems = [
   {
     type: "tool",
     title: "Tool call",
-    description: "Azione su PMS, pagamenti, accessi o CRM.",
+    description: "Azione su gestionale, pagamenti, accessi o CRM.",
   },
   {
     type: "message",
     title: "Invio cliente",
-    description: "WhatsApp, email, SMS o portale ospite.",
+    description: "WhatsApp, email, SMS o portale cliente.",
   },
   {
     type: "guardrail",
@@ -882,14 +882,27 @@ const flows = [
 ];
 
 const catalog = window.BNBFLOW_CATALOG;
-const flowGroups = catalog?.groups || [];
+const businessProfiles = catalog?.businesses || [
+  {
+    id: "hospitality",
+    name: "Casa Livia Hospitality",
+    type: "Hospitality diffusa",
+    description: "Appartamenti e camere con operations leggere.",
+    groups: catalog?.groups || [],
+  },
+];
+const defaultBusinessId = businessProfiles[0]?.id || "hospitality";
 const PERSISTENCE_KEY = "bnbflow-state-v2";
 
 if (catalog) {
   flows.forEach((flow) => {
     Object.assign(flow, catalog.existing[flow.id] || {});
+    flow.businessId ||= defaultBusinessId;
   });
-  flows.push(...catalog.flows);
+  flows.push(...(catalog.flows || []), ...(catalog.businessFlows || []));
+  flows.forEach((flow) => {
+    flow.businessId ||= defaultBusinessId;
+  });
 }
 
 const pilotDefinitions = window.BNBFLOW_SCENARIOS?.flows || {};
@@ -940,6 +953,7 @@ Object.values(pilotDefinitions).forEach((definition) => {
 });
 
 const state = {
+  activeBusinessId: defaultBusinessId,
   currentFlowId: null,
   selectedNodeId: null,
   activeTab: "config",
@@ -950,7 +964,7 @@ const state = {
   simulationIndex: -1,
   nodeStatuses: {},
   activeEdges: new Set(),
-  closedGroups: new Set(flowGroups.map((group) => group.id)),
+  closedGroups: new Set(getBusinessGroups(defaultBusinessId).map((group) => group.id)),
   drag: null,
   activeView: "studio",
   runtimeRun: null,
@@ -982,6 +996,10 @@ document.addEventListener("DOMContentLoaded", () => {
 function cacheElements() {
   els.flowList = document.querySelector("#flowList");
   els.flowSearch = document.querySelector("#flowSearch");
+  els.businessSelect = document.querySelector("#businessSelect");
+  els.businessType = document.querySelector("#businessType");
+  els.businessDescription = document.querySelector("#businessDescription");
+  els.flowBrowserTitle = document.querySelector("#flowBrowserTitle");
   els.paletteGrid = document.querySelector("#paletteGrid");
   els.flowTitle = document.querySelector("#flowTitle");
   els.flowCategory = document.querySelector("#flowCategory");
@@ -1050,6 +1068,7 @@ function cacheElements() {
 
 function bindEvents() {
   els.flowSearch.addEventListener("input", renderFlowList);
+  els.businessSelect?.addEventListener("change", () => setActiveBusiness(els.businessSelect.value));
   els.simulateButton.addEventListener("click", toggleSimulation);
   els.saveButton.addEventListener("click", () => {
     showToast("Configurazione salvata in memoria locale del browser.");
@@ -1159,6 +1178,7 @@ function bindEvents() {
 
 function renderAll() {
   renderViewRouter();
+  renderBusinessSelector();
   renderSidebarTabs();
   setRuntimeTerminalVisible(state.runtimeTerminalVisible);
   setRuntimeTerminalOpen(state.runtimeTerminalOpen);
@@ -1175,8 +1195,52 @@ function renderAll() {
   setRuntimeStatus("ready", "Pronto");
 }
 
+function getBusinessProfile(businessId = state.activeBusinessId) {
+  return businessProfiles.find((business) => business.id === businessId) || businessProfiles[0];
+}
+
+function getBusinessGroups(businessId = state.activeBusinessId) {
+  return getBusinessProfile(businessId)?.groups || [];
+}
+
+function getVisibleFlows() {
+  return flows.filter((flow) => (flow.businessId || defaultBusinessId) === state.activeBusinessId);
+}
+
+function renderBusinessSelector() {
+  const business = getBusinessProfile();
+  if (els.businessSelect) {
+    els.businessSelect.innerHTML = businessProfiles
+      .map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === state.activeBusinessId ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
+      .join("");
+  }
+  if (els.businessType) els.businessType.textContent = business.type;
+  if (els.businessDescription) els.businessDescription.textContent = business.description;
+  if (els.flowBrowserTitle) els.flowBrowserTitle.textContent = `Playbook ${business.type}`;
+}
+
+function setActiveBusiness(businessId) {
+  if (!businessProfiles.some((business) => business.id === businessId)) return;
+  stopSimulation(false);
+  state.activeBusinessId = businessId;
+  state.currentFlowId = null;
+  state.selectedNodeId = null;
+  state.nodeStatuses = {};
+  state.activeEdges = new Set();
+  state.closedGroups = new Set(getBusinessGroups().map((group) => group.id));
+  if (els.flowSearch) els.flowSearch.value = "";
+  renderBusinessSelector();
+  renderFlowList();
+  renderCanvasHeader();
+  renderCanvas();
+  renderInspector();
+  renderEditorAvailability();
+  renderLog([`Business caricato: ${getBusinessProfile().name}`]);
+  setRuntimeStatus("ready", "Pronto");
+}
+
 function getCurrentFlow() {
-  return flows.find((flow) => flow.id === state.currentFlowId) || null;
+  return getVisibleFlows().find((flow) => flow.id === state.currentFlowId) || null;
 }
 
 function getSelectedNode() {
@@ -1190,9 +1254,10 @@ function renderFlowList() {
   els.flowList.innerHTML = "";
 
   let matchCount = 0;
+  const visibleFlows = getVisibleFlows();
 
-  flowGroups.forEach((group) => {
-    const groupFlows = flows.filter((flow) => flow.group === group.id);
+  getBusinessGroups().forEach((group) => {
+    const groupFlows = visibleFlows.filter((flow) => flow.group === group.id);
     const matches = groupFlows.filter((flow) => flowMatchesSearch(flow, query));
     if (matches.length === 0) return;
 
@@ -1311,7 +1376,7 @@ function renderCanvasHeader() {
     els.flowMeta.innerHTML = "";
     return;
   }
-  const group = flowGroups.find((item) => item.id === flow.group);
+  const group = getBusinessGroups().find((item) => item.id === flow.group);
   els.flowTitle.textContent = flow.name;
   els.flowCategory.textContent = `${group?.label || flow.group} · ${flow.category} / ${flow.trigger}`;
   els.flowMeta.innerHTML = Object.entries(flow.metrics)
@@ -1557,7 +1622,7 @@ function renderLog(items, liveIndex = -1) {
 
 function selectFlow(flowId) {
   stopSimulation(false);
-  const flow = flows.find((item) => item.id === flowId);
+  const flow = getVisibleFlows().find((item) => item.id === flowId);
   if (!flow) return;
   state.currentFlowId = flowId;
   state.closedGroups.delete(flow.group);
@@ -1623,6 +1688,7 @@ function duplicateCurrentFlow() {
   clone.id = `${flow.id}-copy-${Date.now()}`;
   clone.name = `${flow.name} - copia`;
   clone.summary = "Copia modificabile del playbook selezionato.";
+  clone.businessId = state.activeBusinessId;
   flows.unshift(clone);
   state.currentFlowId = clone.id;
   state.closedGroups.delete(clone.group);
@@ -1724,7 +1790,15 @@ function defaultDescriptionForType(type) {
 }
 
 function defaultToolForType(type) {
-  return type === "message" ? "guest.sendMessage" : "ops.runTool";
+  const business = getBusinessProfile();
+  const messageTools = {
+    hospitality: "guest.sendMessage",
+    dental: "patient.sendMessage",
+    restaurant: "customer.sendMessage",
+    clinic: "patient.sendMessage",
+    fitness: "member.sendMessage",
+  };
+  return type === "message" ? messageTools[business.id] || "customer.sendMessage" : "ops.runTool";
 }
 
 function defaultParamsForType(type) {
@@ -1735,7 +1809,7 @@ function defaultParamsForType(type) {
     return { memory: "booking_context", temperature: 0.2, requires_human_approval: false };
   }
   if (type === "message") {
-    return { channel: "whatsapp", template: "custom_template", language: "{{guest.language}}" };
+    return { channel: "whatsapp", template: "custom_template", business_id: state.activeBusinessId };
   }
   if (type === "guardrail") {
     return { checks: [], failure_route: "ops.createStaffTask" };
@@ -1744,7 +1818,8 @@ function defaultParamsForType(type) {
 }
 
 function defaultAgentPrompt() {
-  return "Sei un sotto-agente operativo per un BnB. Definisci obiettivo, dati disponibili, passaggi decisionali, tono di comunicazione, limiti e fallback umano. Non promettere azioni non confermate dai tool e registra sempre le decisioni importanti nel PMS.";
+  const business = getBusinessProfile();
+  return `Sei un sotto-agente operativo per ${business.name}, ${business.type.toLowerCase()}. Definisci obiettivo, dati disponibili, passaggi decisionali, tono di comunicazione, limiti e fallback umano. Non promettere azioni non confermate dai tool e registra sempre le decisioni importanti nel gestionale.`;
 }
 
 function clamp(value, min, max) {
@@ -1833,6 +1908,8 @@ function startSelectedScenario() {
   const flow = pilotDefinitions[state.selectedPilotFlowId];
   const scenario = runtimeScenarios.find((item) => item.id === state.selectedScenarioId);
   if (!flow || !scenario) return;
+  state.activeBusinessId = defaultBusinessId;
+  renderBusinessSelector();
   runtimeEngine.start(flow, scenario);
   state.selectedTaskId = null;
   state.selectedFallbackId = null;
@@ -2090,6 +2167,7 @@ function hydrateRuntimeState() {
   const flow = pilotDefinitions[run.flowId];
   const scenario = runtimeScenarios.find((item) => item.id === run.scenarioId);
   if (!flow || !scenario) return;
+  state.activeBusinessId = defaultBusinessId;
   state.selectedPilotFlowId = run.flowId;
   state.selectedScenarioId = run.scenarioId;
   runtimeEngine.restore(flow, scenario, run);
@@ -2102,11 +2180,26 @@ function hydrateSavedState() {
   try {
     const saved = JSON.parse(localStorage.getItem(PERSISTENCE_KEY) || "null");
     if (saved?.version !== 2 || !Array.isArray(saved.flows) || saved.flows.length === 0) return;
-    flows.splice(0, flows.length, ...saved.flows);
+    const catalogFlows = structuredClone(flows);
+    const catalogById = new Map(catalogFlows.map((flow) => [flow.id, flow]));
+    const merged = [];
+    const seen = new Set();
+    saved.flows.forEach((flow) => {
+      const catalogFlow = catalogById.get(flow.id);
+      merged.push({ ...flow, businessId: flow.businessId || catalogFlow?.businessId || defaultBusinessId });
+      seen.add(flow.id);
+    });
+    catalogFlows.forEach((flow) => {
+      if (!seen.has(flow.id)) merged.push(flow);
+    });
+    flows.splice(0, flows.length, ...merged);
 
+    state.activeBusinessId = businessProfiles.some((business) => business.id === saved.activeBusinessId)
+      ? saved.activeBusinessId
+      : defaultBusinessId;
     state.currentFlowId = null;
     state.selectedNodeId = null;
-    state.closedGroups = new Set(flowGroups.map((group) => group.id));
+    state.closedGroups = new Set(getBusinessGroups().map((group) => group.id));
     state.sidebarTab = saved.sidebarTab === "tools" ? "tools" : "flows";
   } catch (error) {
     localStorage.removeItem(PERSISTENCE_KEY);
@@ -2123,6 +2216,7 @@ function persistState() {
       selectedNodeId: state.selectedNodeId,
       closedGroups: [...state.closedGroups],
       sidebarTab: state.sidebarTab,
+      activeBusinessId: state.activeBusinessId,
     }),
   );
 }

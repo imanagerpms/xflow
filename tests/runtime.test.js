@@ -25,7 +25,7 @@ function runtimeFor(scenarioId, options = {}) {
   return runtime;
 }
 
-test("il catalogo canonico resta 40 flussi, 8x5, 30 Core e 10 Avanzati", () => {
+test("il catalogo include hospitality canonico e 4 business verticali", () => {
   const sandbox = {
     window: {
       BNBFLOW_SCENARIOS: { flows: {}, scenarios: [] },
@@ -42,11 +42,17 @@ test("il catalogo canonico resta 40 flussi, 8x5, 30 Core e 10 Avanzati", () => {
   vm.runInContext(`${fs.readFileSync("app.js", "utf8")}; window.__flows = flows;`, sandbox);
   const catalog = sandbox.window.BNBFLOW_CATALOG;
   const allFlows = sandbox.window.__flows;
+  const hospitalityFlows = allFlows.filter((flow) => flow.businessId === "hospitality");
   assert.equal(catalog.groups.length, 8);
-  assert.equal(allFlows.length, 40);
-  assert.equal(allFlows.filter((flow) => flow.level === "Core").length, 30);
-  assert.equal(allFlows.filter((flow) => flow.level === "Avanzato").length, 10);
-  catalog.groups.forEach((group) => assert.equal(allFlows.filter((flow) => flow.group === group.id).length, 5));
+  assert.equal(catalog.businesses.length, 5);
+  assert.equal(allFlows.length, 100);
+  assert.equal(hospitalityFlows.length, 40);
+  assert.equal(hospitalityFlows.filter((flow) => flow.level === "Core").length, 30);
+  assert.equal(hospitalityFlows.filter((flow) => flow.level === "Avanzato").length, 10);
+  catalog.groups.forEach((group) => assert.equal(hospitalityFlows.filter((flow) => flow.group === group.id).length, 5));
+  ["dental", "restaurant", "clinic", "fitness"].forEach((businessId) => {
+    assert.equal(allFlows.filter((flow) => flow.businessId === businessId).length, 15);
+  });
 });
 
 test("la state machine rifiuta transizioni run invalide", () => {
