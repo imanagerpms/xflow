@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>bnbFlow Studio</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23121917'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='24' font-family='Arial' font-weight='700' fill='white'%3Ebf%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-play" viewBox="0 0 24 24">
+        <path d="M8 5v14l11-7z"></path>
+      </symbol>
+      <symbol id="icon-stop" viewBox="0 0 24 24">
+        <path d="M6 6h12v12H6z"></path>
+      </symbol>
+      <symbol id="icon-save" viewBox="0 0 24 24">
+        <path d="M5 4h12l2 2v14H5z"></path>
+        <path d="M8 4v6h8V4"></path>
+        <path d="M8 17h8"></path>
+      </symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14"></path>
+        <path d="M5 12h14"></path>
+      </symbol>
+      <symbol id="icon-zap" viewBox="0 0 24 24">
+        <path d="M13 2 4 14h7l-1 8 9-12h-7z"></path>
+      </symbol>
+      <symbol id="icon-bot" viewBox="0 0 24 24">
+        <path d="M12 5V2"></path>
+        <rect x="5" y="6" width="14" height="11" rx="3"></rect>
+        <path d="M8 21h8"></path>
+        <path d="M9 11h.01"></path>
+        <path d="M15 11h.01"></path>
+      </symbol>
+      <symbol id="icon-tool" viewBox="0 0 24 24">
+        <path d="m14 7 3-3 3 3-3 3"></path>
+        <path d="M4 20 15 9"></path>
+        <path d="m9 4 11 11"></path>
+      </symbol>
+      <symbol id="icon-mail" viewBox="0 0 24 24">
+        <path d="M4 6h16v12H4z"></path>
+        <path d="m4 7 8 6 8-6"></path>
+      </symbol>
+      <symbol id="icon-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8"></circle>
+        <path d="M12 8v5l3 2"></path>
+      </symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24">
+        <path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6z"></path>
+        <path d="m9 12 2 2 4-5"></path>
+      </symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24">
+        <circle cx="10" cy="10" r="6"></circle>
+        <path d="m15 15 5 5"></path>
+      </symbol>
+      <symbol id="icon-sliders" viewBox="0 0 24 24">
+        <path d="M4 7h6"></path>
+        <path d="M14 7h6"></path>
+        <path d="M4 17h10"></path>
+        <path d="M18 17h2"></path>
+        <circle cx="12" cy="7" r="2"></circle>
+        <circle cx="16" cy="17" r="2"></circle>
+      </symbol>
+    </svg>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">bf</span>
+          <div>
+            <p class="eyebrow">Hospitality automation</p>
+            <h1>bnbFlow Studio</h1>
+          </div>
+        </div>
+        <div class="topbar-center">
+          <label class="property-switcher">
+            <span>Struttura</span>
+            <select id="propertySelect">
+              <option>Casa Livia BnB - Roma</option>
+              <option>Villa Noto Rooms</option>
+              <option>Lake Loft Como</option>
+            </select>
+          </label>
+          <div class="environment-pill" aria-label="Ambiente sandbox">
+            <span></span>
+            Sandbox operativo
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-button" id="saveButton" type="button" aria-label="Salva configurazione" title="Salva configurazione">
+            <svg><use href="#icon-save"></use></svg>
+          </button>
+          <button class="primary-icon-button" id="simulateButton" type="button" aria-label="Avvia simulazione" title="Avvia simulazione">
+            <svg><use href="#icon-play"></use></svg>
+            <span>Simula</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="sidebar panel">
+          <section class="flow-browser">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Flussi pronti</p>
+                <h2>Playbook BnB</h2>
+              </div>
+              <button class="icon-button small" id="newFlowButton" type="button" aria-label="Duplica flusso" title="Duplica flusso">
+                <svg><use href="#icon-plus"></use></svg>
+              </button>
+            </div>
+            <label class="search-box">
+              <svg><use href="#icon-search"></use></svg>
+              <input id="flowSearch" type="search" placeholder="Cerca trigger, tool, agente" />
+            </label>
+            <div class="flow-list" id="flowList" aria-label="Elenco flussi"></div>
+          </section>
+
+          <section class="palette">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Blocchi</p>
+                <h2>Palette low-code</h2>
+              </div>
+            </div>
+            <div class="palette-grid" id="paletteGrid"></div>
+          </section>
+
+          <section class="run-log">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Runtime</p>
+                <h2>Event log</h2>
+              </div>
+            </div>
+            <ol id="eventLog" class="event-log"></ol>
+          </section>
+        </aside>
+
+        <section class="canvas-column">
+          <div class="canvas-toolbar panel">
+            <div>
+              <p class="eyebrow" id="flowCategory">Guest operations</p>
+              <h2 id="flowTitle">Check-in online completato</h2>
+            </div>
+            <div class="flow-meta" id="flowMeta"></div>
+          </div>
+          <div class="canvas-wrap panel">
+            <svg id="connectorLayer" class="connector-layer" aria-hidden="true"></svg>
+            <div id="flowCanvas" class="flow-canvas" aria-label="Canvas del flusso"></div>
+          </div>
+        </section>
+
+        <aside class="inspector panel">
+          <div class="inspector-header">
+            <div>
+              <p class="eyebrow">Inspector</p>
+              <h2 id="inspectorTitle">Nodo selezionato</h2>
+            </div>
+            <span id="nodeBadge" class="node-badge">agent</span>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="Pannelli inspector">
+            <button class="tab active" type="button" data-tab="config">Config</button>
+            <button class="tab" type="button" data-tab="prompt">Prompt</button>
+            <button class="tab" type="button" data-tab="tools">Tool</button>
+          </div>
+
+          <div class="tab-panel active" id="configPanel">
+            <label class="field">
+              <span>Nome nodo</span>
+              <input id="nodeNameInput" type="text" />
+            </label>
+            <label class="field">
+              <span>Descrizione operativa</span>
+              <textarea id="nodeDescriptionInput" rows="5"></textarea>
+            </label>
+            <label class="field">
+              <span>Condizione / routing</span>
+              <input id="nodeConditionInput" type="text" />
+            </label>
+          </div>
+
+          <div class="tab-panel" id="promptPanel">
+            <div class="prompt-hint">
+              <svg><use href="#icon-bot"></use></svg>
+              <span>Prompt di sistema del sotto-agente selezionato.</span>
+            </div>
+            <label class="field">
+              <span>Prompt agente</span>
+              <textarea id="nodePromptInput" rows="15"></textarea>
+            </label>
+          </div>
+
+          <div class="tab-panel" id="toolsPanel">
+            <label class="field">
+              <span>Tool function</span>
+              <input id="nodeToolInput" type="text" />
+            </label>
+            <label class="field">
+              <span>Parametri JSON</span>
+              <textarea id="nodeParamsInput" rows="12" spellcheck="false"></textarea>
+            </label>
+            <div class="guardrail-box">
+              <svg><use href="#icon-shield"></use></svg>
+              <p id="guardrailText">Seleziona un tool o un agente per vedere controlli e limiti.</p>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
