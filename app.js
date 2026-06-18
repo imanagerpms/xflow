@@ -873,6 +873,17 @@ const flows = [
   },
 ];
 
+const catalog = window.BNBFLOW_CATALOG;
+const flowGroups = catalog?.groups || [];
+const PERSISTENCE_KEY = "bnbflow-state-v2";
+
+if (catalog) {
+  flows.forEach((flow) => {
+    Object.assign(flow, catalog.existing[flow.id] || {});
+  });
+  flows.push(...catalog.flows);
+}
+
 const state = {
   currentFlowId: flows[0].id,
   selectedNodeId: "checkin-agent-verify",
@@ -881,6 +892,7 @@ const state = {
   simulationIndex: -1,
   nodeStatuses: {},
   activeEdges: new Set(),
+  closedGroups: new Set(),
   drag: null,
 };
 
@@ -923,7 +935,7 @@ function bindEvents() {
   els.simulateButton.addEventListener("click", toggleSimulation);
   els.saveButton.addEventListener("click", () => {
     showToast("Configurazione salvata in memoria locale del browser.");
-    localStorage.setItem("bnbflow-state", JSON.stringify(flows));
+    persistState();
   });
   els.newFlowButton.addEventListener("click", duplicateCurrentFlow);
 
@@ -991,33 +1003,104 @@ function renderFlowList() {
   const query = els.flowSearch.value.trim().toLowerCase();
   els.flowList.innerHTML = "";
 
-  flows
-    .filter((flow) => {
-      const haystack = [
-        flow.name,
-        flow.category,
-        flow.summary,
-        flow.trigger,
-        ...flow.nodes.map((node) => `${node.name} ${node.description} ${node.tool || ""}`),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
-    })
-    .forEach((flow) => {
+  let matchCount = 0;
+
+  flowGroups.forEach((group) => {
+    const groupFlows = flows.filter((flow) => flow.group === group.id);
+    const matches = groupFlows.filter((flow) => flowMatchesSearch(flow, query));
+    if (matches.length === 0) return;
+
+    matchCount += matches.length;
+    const isOpen = Boolean(query) || !state.closedGroups.has(group.id);
+    const section = document.createElement("section");
+    section.className = `flow-group ${isOpen ? "is-open" : ""}`;
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "flow-group-toggle";
+    toggle.setAttribute("aria-expanded", String(isOpen));
+    toggle.setAttribute("aria-controls", `flow-group-${group.id}`);
+    toggle.innerHTML = `
+      <span class="flow-group-copy">
+        <strong>${escapeHtml(group.label)}</strong>
+        <small>${escapeHtml(group.description)}</small>
+      </span>
+      <span class="flow-group-actions">
+        <span class="flow-group-count">${query ? `${matches.length}/${groupFlows.length}` : groupFlows.length}</span>
+        <span class="flow-group-chevron" aria-hidden="true"></span>
+      </span>
+    `;
+    toggle.addEventListener("click", () => toggleFlowGroup(group.id));
+    section.appendChild(toggle);
+
+    const items = document.createElement("div");
+    items.className = "flow-group-items";
+    items.id = `flow-group-${group.id}`;
+    items.hidden = !isOpen;
+
+    matches.forEach((flow) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `flow-card ${flow.id === state.currentFlowId ? "active" : ""}`;
       button.innerHTML = `
         <div class="flow-card-header">
           <strong>${escapeHtml(flow.name)}</strong>
-          <span class="flow-chip">${escapeHtml(flow.category)}</span>
+          <span class="flow-level ${flow.level === "Avanzato" ? "is-advanced" : ""}">${escapeHtml(flow.level)}</span>
         </div>
+        <span class="flow-chip">${escapeHtml(flow.category)}</span>
         <p>${escapeHtml(flow.summary)}</p>
       `;
       button.addEventListener("click", () => selectFlow(flow.id));
-      els.flowList.appendChild(button);
+      items.appendChild(button);
     });
+
+    section.appendChild(items);
+    els.flowList.appendChild(section);
+  });
+
+  if (matchCount === 0) {
+    const empty = document.createElement("div");
+    empty.className = "flow-empty-state";
+    empty.innerHTML = `<strong>Nessun flusso trovato</strong><span>Prova con un nome, un trigger, un tool o una frase del prompt.</span>`;
+    els.flowList.appendChild(empty);
+  }
+}
+
+function flowMatchesSearch(flow, query) {
+  if (!query) return true;
+  const haystack = [
+    flow.name,
+    flow.category,
+    flow.level,
+    flow.summary,
+    flow.trigger,
+    ...flow.nodes.flatMap((node) => [
+      node.name,
+      node.description,
+      node.prompt,
+      node.condition,
+      node.tool,
+      JSON.stringify(node.params || {}),
+    ]),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(query);
+}
+
+function toggleFlowGroup(groupId) {
+  const currentGroupId = getCurrentFlow().group;
+  if (groupId === currentGroupId && !state.closedGroups.has(groupId)) {
+    showToast("Il gruppo del flusso selezionato resta aperto.");
+    return;
+  }
+
+  if (state.closedGroups.has(groupId)) {
+    state.closedGroups.delete(groupId);
+  } else {
+    state.closedGroups.add(groupId);
+  }
+  renderFlowList();
 }
 
 function renderPalette() {
@@ -1042,8 +1125,9 @@ function renderPalette() {
 
 function renderCanvasHeader() {
   const flow = getCurrentFlow();
+  const group = flowGroups.find((item) => item.id === flow.group);
   els.flowTitle.textContent = flow.name;
-  els.flowCategory.textContent = `${flow.category} / ${flow.trigger}`;
+  els.flowCategory.textContent = `${group?.label || flow.group} · ${flow.category} / ${flow.trigger}`;
   els.flowMeta.innerHTML = Object.entries(flow.metrics)
     .map(
       ([label, value]) => `
@@ -1168,6 +1252,7 @@ function selectFlow(flowId) {
   const flow = flows.find((item) => item.id === flowId);
   if (!flow) return;
   state.currentFlowId = flowId;
+  state.closedGroups.delete(flow.group);
   state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
   state.nodeStatuses = {};
   state.activeEdges = new Set();
@@ -1227,6 +1312,7 @@ function duplicateCurrentFlow() {
   clone.summary = "Copia modificabile del playbook selezionato.";
   flows.unshift(clone);
   state.currentFlowId = clone.id;
+  state.closedGroups.delete(clone.group);
   state.selectedNodeId = clone.nodes.find((node) => node.type === "agent")?.id || clone.nodes[0]?.id;
   showToast("Flusso duplicato. Puoi modificarlo dall'inspector.");
   renderAll();
@@ -1407,14 +1493,38 @@ function showToast(message) {
 
 function hydrateSavedState() {
   try {
-    const saved = JSON.parse(localStorage.getItem("bnbflow-state") || "null");
-    if (!Array.isArray(saved) || saved.length === 0) return;
-    flows.splice(0, flows.length, ...saved);
-    state.currentFlowId = flows[0].id;
-    state.selectedNodeId = flows[0].nodes.find((node) => node.type === "agent")?.id || flows[0].nodes[0]?.id;
+    const saved = JSON.parse(localStorage.getItem(PERSISTENCE_KEY) || "null");
+    if (saved?.version !== 2 || !Array.isArray(saved.flows) || saved.flows.length === 0) return;
+    flows.splice(0, flows.length, ...saved.flows);
+
+    const savedFlow = flows.find((flow) => flow.id === saved.currentFlowId) || flows[0];
+    state.currentFlowId = savedFlow.id;
+    state.selectedNodeId =
+      savedFlow.nodes.find((node) => node.id === saved.selectedNodeId)?.id ||
+      savedFlow.nodes.find((node) => node.type === "agent")?.id ||
+      savedFlow.nodes[0]?.id;
+    state.closedGroups = new Set(
+      Array.isArray(saved.closedGroups)
+        ? saved.closedGroups.filter((groupId) => flowGroups.some((group) => group.id === groupId))
+        : [],
+    );
+    state.closedGroups.delete(savedFlow.group);
   } catch (error) {
-    localStorage.removeItem("bnbflow-state");
+    localStorage.removeItem(PERSISTENCE_KEY);
   }
+}
+
+function persistState() {
+  localStorage.setItem(
+    PERSISTENCE_KEY,
+    JSON.stringify({
+      version: 2,
+      flows,
+      currentFlowId: state.currentFlowId,
+      selectedNodeId: state.selectedNodeId,
+      closedGroups: [...state.closedGroups],
+    }),
+  );
 }
 
 function escapeHtml(value) {
