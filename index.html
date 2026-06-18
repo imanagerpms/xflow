@@ -169,8 +169,8 @@
         <section class="canvas-column">
           <div class="canvas-toolbar panel">
             <div>
-              <p class="eyebrow" id="flowCategory">Guest operations</p>
-              <h2 id="flowTitle">Check-in online completato</h2>
+              <p class="eyebrow" id="flowCategory">Studio</p>
+              <h2 id="flowTitle">Nessun flusso selezionato</h2>
             </div>
             <div class="flow-meta" id="flowMeta"></div>
           </div>
@@ -184,18 +184,24 @@
           <div class="inspector-header">
             <div>
               <p class="eyebrow">Inspector</p>
-              <h2 id="inspectorTitle">Nodo selezionato</h2>
+              <h2 id="inspectorTitle">Nessun nodo selezionato</h2>
             </div>
-            <span id="nodeBadge" class="node-badge">agent</span>
+            <span id="nodeBadge" class="node-badge" hidden></span>
           </div>
 
-          <div class="tabs" role="tablist" aria-label="Pannelli inspector">
+          <div class="tabs" id="inspectorTabs" role="tablist" aria-label="Pannelli inspector" hidden>
             <button class="tab active" type="button" data-tab="config">Config</button>
             <button class="tab" type="button" data-tab="prompt">Prompt</button>
             <button class="tab" type="button" data-tab="tools">Tool</button>
             <button class="tab" type="button" data-tab="outcome">Outcome</button>
             <button class="tab" type="button" data-tab="policy">Policy</button>
             <button class="tab" type="button" data-tab="fallback">Fallback</button>
+          </div>
+
+          <div class="inspector-empty-state" id="inspectorEmpty">
+            <svg aria-hidden="true"><use href="#icon-sliders"></use></svg>
+            <strong>Inspector in attesa</strong>
+            <span>Seleziona un flusso e poi un nodo per modificarne configurazione, prompt e policy.</span>
           </div>
 
           <div class="tab-panel active" id="configPanel">

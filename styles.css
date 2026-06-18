@@ -57,6 +57,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 svg {
   display: block;
 }
@@ -901,6 +906,50 @@ body[data-active-view="simulator"] .runtime-terminal {
   min-height: 780px;
 }
 
+.flow-canvas.is-empty {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.editor-empty-state,
+.inspector-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  max-width: 360px;
+  color: var(--muted);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.editor-empty-state svg,
+.inspector-empty-state svg {
+  width: 38px;
+  height: 38px;
+  margin-bottom: 4px;
+  padding: 9px;
+  border-radius: 50%;
+  background: var(--teal-soft);
+  color: var(--teal);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.editor-empty-state strong,
+.inspector-empty-state strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.editor-empty-state span,
+.inspector-empty-state span {
+  font-size: 12px;
+}
+
 .connector-layer {
   position: absolute;
   inset: 0;
@@ -1158,6 +1207,11 @@ body[data-active-view="simulator"] .runtime-terminal {
   min-width: 0;
   display: grid;
   grid-template-rows: auto auto 1fr;
+}
+
+.inspector-empty-state {
+  place-self: center;
+  padding: 24px 10px;
 }
 
 .inspector-header {

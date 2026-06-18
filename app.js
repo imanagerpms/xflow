@@ -940,8 +940,8 @@ Object.values(pilotDefinitions).forEach((definition) => {
 });
 
 const state = {
-  currentFlowId: flows[0].id,
-  selectedNodeId: "checkin-agent-verify",
+  currentFlowId: null,
+  selectedNodeId: null,
   activeTab: "config",
   sidebarTab: "flows",
   runtimeTerminalOpen: false,
@@ -950,7 +950,7 @@ const state = {
   simulationIndex: -1,
   nodeStatuses: {},
   activeEdges: new Set(),
-  closedGroups: new Set(),
+  closedGroups: new Set(flowGroups.map((group) => group.id)),
   drag: null,
   activeView: "studio",
   runtimeRun: null,
@@ -1000,6 +1000,8 @@ function cacheElements() {
   els.toast = document.querySelector("#toast");
   els.inspectorTitle = document.querySelector("#inspectorTitle");
   els.nodeBadge = document.querySelector("#nodeBadge");
+  els.inspectorTabs = document.querySelector("#inspectorTabs");
+  els.inspectorEmpty = document.querySelector("#inspectorEmpty");
   els.nodeNameInput = document.querySelector("#nodeNameInput");
   els.nodeDescriptionInput = document.querySelector("#nodeDescriptionInput");
   els.nodeConditionInput = document.querySelector("#nodeConditionInput");
@@ -1166,6 +1168,7 @@ function renderAll() {
   renderCanvas();
   renderInspector();
   renderTabs();
+  renderEditorAvailability();
   renderScenarioControls();
   renderRuntimeSurfaces();
   renderLog(["Seleziona un flusso o avvia una simulazione per vedere gli step runtime."]);
@@ -1173,11 +1176,12 @@ function renderAll() {
 }
 
 function getCurrentFlow() {
-  return flows.find((flow) => flow.id === state.currentFlowId) || flows[0];
+  return flows.find((flow) => flow.id === state.currentFlowId) || null;
 }
 
 function getSelectedNode() {
   const flow = getCurrentFlow();
+  if (!flow) return null;
   return flow.nodes.find((node) => node.id === state.selectedNodeId) || flow.nodes[0];
 }
 
@@ -1271,12 +1275,6 @@ function flowMatchesSearch(flow, query) {
 }
 
 function toggleFlowGroup(groupId) {
-  const currentGroupId = getCurrentFlow().group;
-  if (groupId === currentGroupId && !state.closedGroups.has(groupId)) {
-    showToast("Il gruppo del flusso selezionato resta aperto.");
-    return;
-  }
-
   if (state.closedGroups.has(groupId)) {
     state.closedGroups.delete(groupId);
   } else {
@@ -1307,6 +1305,12 @@ function renderPalette() {
 
 function renderCanvasHeader() {
   const flow = getCurrentFlow();
+  if (!flow) {
+    els.flowTitle.textContent = "Nessun flusso selezionato";
+    els.flowCategory.textContent = "Studio";
+    els.flowMeta.innerHTML = "";
+    return;
+  }
   const group = flowGroups.find((item) => item.id === flow.group);
   els.flowTitle.textContent = flow.name;
   els.flowCategory.textContent = `${group?.label || flow.group} · ${flow.category} / ${flow.trigger}`;
@@ -1325,6 +1329,26 @@ function renderCanvasHeader() {
 function renderCanvas() {
   const flow = getCurrentFlow();
   els.flowCanvas.innerHTML = "";
+  els.flowCanvas.classList.toggle("is-empty", !flow);
+
+  if (!flow) {
+    els.flowCanvas.style.width = "100%";
+    els.flowCanvas.style.minHeight = "100%";
+    els.flowCanvas.innerHTML = `
+      <div class="editor-empty-state">
+        <svg aria-hidden="true"><use href="#icon-zap"></use></svg>
+        <strong>Il canvas è pronto</strong>
+        <span>Apri un gruppo nella sidebar e seleziona un flusso per iniziare a lavorare.</span>
+      </div>
+    `;
+    els.connectorLayer.innerHTML = "";
+    els.connectorLayer.setAttribute("width", "0");
+    els.connectorLayer.setAttribute("height", "0");
+    els.connectorLayer.style.width = "0";
+    els.connectorLayer.style.height = "0";
+    return;
+  }
+
   const canvasWidth = Math.max(1120, ...flow.nodes.map((node) => (node.x || 0) + 290));
   const canvasHeight = Math.max(780, ...flow.nodes.map((node) => (node.y || 0) + 210));
   els.flowCanvas.style.width = `${canvasWidth}px`;
@@ -1378,6 +1402,7 @@ function renderCanvas() {
 function renderConnectors() {
   const flow = getCurrentFlow();
   els.connectorLayer.innerHTML = "";
+  if (!flow) return;
 
   flow.edges.forEach((edge) => {
     const fromId = Array.isArray(edge) ? edge[0] : edge.from;
@@ -1410,9 +1435,15 @@ function renderConnectors() {
 
 function renderInspector() {
   const node = getSelectedNode();
-  if (!node) return;
+  if (!node) {
+    els.inspectorTitle.textContent = "Nessun nodo selezionato";
+    els.nodeBadge.hidden = true;
+    renderTabs();
+    return;
+  }
 
   els.inspectorTitle.textContent = node.name;
+  els.nodeBadge.hidden = false;
   els.nodeBadge.textContent = typeLabels[node.type];
   els.nodeBadge.className = `node-badge type-${node.type}`;
   els.nodeNameInput.value = node.name || "";
@@ -1422,7 +1453,7 @@ function renderInspector() {
   els.nodeToolInput.value = node.tool || "";
   els.nodeParamsInput.value = JSON.stringify(node.params || {}, null, 2);
   els.guardrailText.textContent = node.guardrail || "Nessun guardrail specifico configurato.";
-  els.nodeBusinessGoalInput.value = node.businessGoal || getCurrentFlow().businessGoal || "";
+  els.nodeBusinessGoalInput.value = node.businessGoal || getCurrentFlow()?.businessGoal || "";
   els.nodeCapabilityInput.value = node.capability || "";
   els.nodeSuccessContractInput.value = JSON.stringify(node.successContract || {}, null, 2);
   els.nodeTimeoutInput.value = node.timeoutSeconds || "";
@@ -1437,9 +1468,13 @@ function renderInspector() {
   els.nodePromptInput.disabled = !isAgent;
   els.nodeToolInput.disabled = !hasTool;
   els.nodeParamsInput.disabled = !(node.params || hasTool || node.type === "trigger" || node.type === "guardrail");
+  renderTabs();
 }
 
 function renderTabs() {
+  const hasNode = Boolean(getSelectedNode());
+  els.inspectorTabs.hidden = !hasNode;
+  els.inspectorEmpty.hidden = hasNode;
   document.querySelectorAll(".tab").forEach((tab) => {
     const active = tab.dataset.tab === state.activeTab;
     tab.classList.toggle("active", active);
@@ -1448,10 +1483,20 @@ function renderTabs() {
     tab.setAttribute("aria-controls", `${tab.dataset.tab}Panel`);
   });
   document.querySelectorAll(".tab-panel").forEach((panel) => {
-    const active = panel.id === `${state.activeTab}Panel`;
+    const active = hasNode && panel.id === `${state.activeTab}Panel`;
     panel.classList.toggle("active", active);
     panel.hidden = !active;
     panel.setAttribute("role", "tabpanel");
+  });
+}
+
+function renderEditorAvailability() {
+  const hasFlow = Boolean(getCurrentFlow());
+  els.saveButton.disabled = !hasFlow;
+  els.simulateButton.disabled = !hasFlow;
+  els.newFlowButton.disabled = !hasFlow;
+  els.paletteGrid.querySelectorAll("button").forEach((button) => {
+    button.disabled = !hasFlow;
   });
 }
 
@@ -1523,6 +1568,7 @@ function selectFlow(flowId) {
   renderCanvasHeader();
   renderCanvas();
   renderInspector();
+  renderEditorAvailability();
   renderLog([`Flusso caricato: ${flow.name}`]);
   setRuntimeStatus("ready", "Pronto");
 }
@@ -1537,6 +1583,7 @@ function addNode(type) {
   stopSimulation(false);
   setRuntimeStatus("ready", "Pronto");
   const flow = getCurrentFlow();
+  if (!flow) return;
   const selected = getSelectedNode();
   const id = `${type}-${Date.now()}`;
   const baseX = Math.min((selected?.x || 60) + 290, 860);
@@ -1571,6 +1618,7 @@ function addNode(type) {
 function duplicateCurrentFlow() {
   stopSimulation(false);
   const flow = getCurrentFlow();
+  if (!flow) return;
   const clone = structuredClone(flow);
   clone.id = `${flow.id}-copy-${Date.now()}`;
   clone.name = `${flow.name} - copia`;
@@ -1586,6 +1634,7 @@ function duplicateCurrentFlow() {
 function toggleSimulation() {
   if (state.autoRunTimer) return stopSimulation(true);
   const current = getCurrentFlow();
+  if (!current) return;
   if (pilotDefinitions[current.id]) state.selectedPilotFlowId = current.id;
   setActiveView("simulator");
   renderScenarioControls();
@@ -1636,6 +1685,7 @@ function onNodePointerDown(event, node) {
 function onPointerMove(event) {
   if (!state.drag) return;
   const flow = getCurrentFlow();
+  if (!flow) return;
   const node = flow.nodes.find((item) => item.id === state.drag.nodeId);
   if (!node) return;
   const rect = els.flowCanvas.getBoundingClientRect();
@@ -1728,7 +1778,7 @@ function bindJsonEditor(element, field) {
 function renderInspectorCompleteness(node) {
   const outcomes = Object.keys(node.outcomes || {});
   const handledFailure = outcomes.some((item) => ["failed", "timed_out", "policy_blocked", "completed_manually", "completed_with_workaround", "completed_with_alternate_provider"].includes(item));
-  const complete = Boolean(node.businessGoal || getCurrentFlow().businessGoal) && (node.type !== "tool" || handledFailure || node.fallbackTaskKey);
+  const complete = Boolean(node.businessGoal || getCurrentFlow()?.businessGoal) && (node.type !== "tool" || handledFailure || node.fallbackTaskKey);
   els.nodeCompleteness.className = `completeness-box ${complete ? "is-complete" : "has-warning"}`;
   els.nodeCompleteness.innerHTML = complete
     ? `<strong>Contratto configurato</strong><span>${outcomes.length} outcome instradati · ${node.fallbackPlaybook?.length || 0} fallback</span>`
@@ -2054,18 +2104,9 @@ function hydrateSavedState() {
     if (saved?.version !== 2 || !Array.isArray(saved.flows) || saved.flows.length === 0) return;
     flows.splice(0, flows.length, ...saved.flows);
 
-    const savedFlow = flows.find((flow) => flow.id === saved.currentFlowId) || flows[0];
-    state.currentFlowId = savedFlow.id;
-    state.selectedNodeId =
-      savedFlow.nodes.find((node) => node.id === saved.selectedNodeId)?.id ||
-      savedFlow.nodes.find((node) => node.type === "agent")?.id ||
-      savedFlow.nodes[0]?.id;
-    state.closedGroups = new Set(
-      Array.isArray(saved.closedGroups)
-        ? saved.closedGroups.filter((groupId) => flowGroups.some((group) => group.id === groupId))
-        : [],
-    );
-    state.closedGroups.delete(savedFlow.group);
+    state.currentFlowId = null;
+    state.selectedNodeId = null;
+    state.closedGroups = new Set(flowGroups.map((group) => group.id));
     state.sidebarTab = saved.sidebarTab === "tools" ? "tools" : "flows";
   } catch (error) {
     localStorage.removeItem(PERSISTENCE_KEY);
