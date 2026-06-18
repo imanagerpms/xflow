@@ -78,6 +78,13 @@
           </div>
         </div>
         <div class="topbar-center">
+          <nav class="app-nav" aria-label="Aree applicative">
+            <button class="app-nav-item active" type="button" data-view="studio">Studio</button>
+            <button class="app-nav-item" type="button" data-view="simulator">Simulatore</button>
+            <button class="app-nav-item" type="button" data-view="operations">Operations <span id="operationsBadge">0</span></button>
+            <button class="app-nav-item" type="button" data-view="technical">Technical <span id="technicalBadge">0</span></button>
+            <button class="app-nav-item" type="button" data-view="audit">Audit</button>
+          </nav>
           <label class="property-switcher">
             <span>Struttura</span>
             <select id="propertySelect">
@@ -102,7 +109,7 @@
         </div>
       </header>
 
-      <main class="workspace">
+      <main class="workspace view-panel active" id="studioView" data-view-panel="studio">
         <aside class="sidebar panel">
           <div class="sidebar-tabs" role="tablist" aria-label="Navigazione barra laterale">
             <button
@@ -186,6 +193,9 @@
             <button class="tab active" type="button" data-tab="config">Config</button>
             <button class="tab" type="button" data-tab="prompt">Prompt</button>
             <button class="tab" type="button" data-tab="tools">Tool</button>
+            <button class="tab" type="button" data-tab="outcome">Outcome</button>
+            <button class="tab" type="button" data-tab="policy">Policy</button>
+            <button class="tab" type="button" data-tab="fallback">Fallback</button>
           </div>
 
           <div class="tab-panel active" id="configPanel">
@@ -228,7 +238,96 @@
               <p id="guardrailText">Seleziona un tool o un agente per vedere controlli e limiti.</p>
             </div>
           </div>
+
+          <div class="tab-panel" id="outcomePanel">
+            <label class="field">
+              <span>Business outcome</span>
+              <input id="nodeBusinessGoalInput" type="text" placeholder="guest_can_access_property" />
+            </label>
+            <label class="field">
+              <span>Capability</span>
+              <input id="nodeCapabilityInput" type="text" placeholder="create_temporary_access" />
+            </label>
+            <label class="field">
+              <span>Success contract JSON</span>
+              <textarea id="nodeSuccessContractInput" rows="11" spellcheck="false"></textarea>
+            </label>
+            <div class="completeness-box" id="nodeCompleteness"></div>
+          </div>
+
+          <div class="tab-panel" id="policyPanel">
+            <div class="field-grid">
+              <label class="field"><span>Timeout (sec)</span><input id="nodeTimeoutInput" type="number" min="1" /></label>
+              <label class="field"><span>Tentativi max</span><input id="nodeAttemptsInput" type="number" min="1" max="9" /></label>
+            </div>
+            <label class="field">
+              <span>Idempotency key</span>
+              <input id="nodeIdempotencyInput" type="text" placeholder="{{booking.id}}:action:v1" />
+            </label>
+            <label class="field">
+              <span>Outcome routing JSON</span>
+              <textarea id="nodeOutcomesInput" rows="12" spellcheck="false"></textarea>
+            </label>
+          </div>
+
+          <div class="tab-panel" id="fallbackPanel">
+            <p class="inspector-copy">Ordine del playbook: dal retry tecnico all'alternativa operativa sul macro-obiettivo.</p>
+            <label class="field">
+              <span>Fallback playbook · uno per riga</span>
+              <textarea id="nodeFallbackInput" rows="10"></textarea>
+            </label>
+            <div class="task-preview" id="taskPreview"></div>
+          </div>
         </aside>
+      </main>
+
+      <main class="module-view view-panel" id="simulatorView" data-view-panel="simulator" hidden>
+        <header class="module-header panel">
+          <div><p class="eyebrow">Runtime deterministico</p><h2>Simulatore scenari</h2><p>Failure injection riproducibile, avanzamento controllato e ripresa dopo intervento umano.</p></div>
+          <div class="run-status-chip" id="simulatorRunStatus">Nessun run</div>
+        </header>
+        <div class="simulator-grid">
+          <aside class="control-panel panel">
+            <label class="field"><span>Flusso pilota</span><select id="pilotFlowSelect"></select></label>
+            <label class="field"><span>Scenario</span><select id="scenarioSelect"></select></label>
+            <div class="scenario-summary" id="scenarioSummary"></div>
+            <div class="latency-control"><span>Latenza visuale</span><input id="latencyInput" type="range" min="120" max="1200" value="420" /><output id="latencyOutput">420 ms</output></div>
+            <div class="button-stack">
+              <button class="primary-action" id="startScenarioButton" type="button">Avvia scenario</button>
+              <button class="secondary-action" id="stepRunButton" type="button">Avanza uno step</button>
+              <button class="secondary-action" id="autoRunButton" type="button">Esegui fino al blocco</button>
+              <button class="ghost-action" id="resetRunButton" type="button">Azzera run</button>
+            </div>
+          </aside>
+          <section class="run-panel panel">
+            <div class="panel-heading"><div><p class="eyebrow">Run inspector</p><h3 id="runTitle">Pronto per una simulazione</h3></div><span class="mono" id="runId">—</span></div>
+            <div class="run-kpis" id="runKpis"></div>
+            <div class="run-path" id="runPath"></div>
+          </section>
+          <aside class="live-panel panel">
+            <div class="panel-heading"><div><p class="eyebrow">Segnale operativo</p><h3>Task e audit live</h3></div></div>
+            <div id="liveTask"></div>
+            <ol class="audit-list compact" id="liveAudit"></ol>
+          </aside>
+        </div>
+      </main>
+
+      <main class="module-view view-panel" id="operationsView" data-view-panel="operations" hidden>
+        <header class="module-header panel"><div><p class="eyebrow">Operations Inbox</p><h2>Completare il macro-obiettivo</h2><p>Le anomalie tecniche sono contesto; la priorita è proteggere ospite e struttura.</p></div><div class="view-stat" id="operationsStat">0 task aperti</div></header>
+        <div class="inbox-grid">
+          <section class="inbox-list panel"><div class="filter-row"><button class="filter-chip active" type="button">Aperti</button><button class="filter-chip" type="button">Critici</button><button class="filter-chip" type="button">SLA &lt; 15m</button></div><div id="operationsList"></div></section>
+          <section class="task-detail panel" id="operationsDetail"><div class="empty-panel">Avvia uno scenario con fallback umano per popolare la inbox.</div></section>
+        </div>
+      </main>
+
+      <main class="module-view view-panel" id="technicalView" data-view-panel="technical" hidden>
+        <header class="module-header panel"><div><p class="eyebrow">Technical Inbox</p><h2>Ripristinare provider e integrazioni</h2><p>La coda resta separata dalle azioni operative e non blocca un outcome gia recuperato.</p></div><div class="view-stat" id="technicalStat">0 issue aperte</div></header>
+        <section class="technical-table panel"><div class="table-header"><span>Provider / funzione</span><span>Errore</span><span>Tentativi</span><span>Workaround ops</span><span>Stato</span></div><div id="technicalList"></div></section>
+      </main>
+
+      <main class="module-view view-panel" id="auditView" data-view-panel="audit" hidden>
+        <header class="module-header panel"><div><p class="eyebrow">Audit timeline</p><h2>Decisioni, tentativi e interventi</h2><p>Sequenza immutabile del run, con attore, payload sintetico e routing.</p></div><div class="view-stat" id="auditStat">0 eventi</div></header>
+        <section class="audit-panel panel"><ol class="audit-list" id="auditTimeline"></ol></section>
       </main>
     </div>
 
@@ -255,6 +354,13 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script src="catalog.js" defer></script>
+    <script src="audit.js" defer></script>
+    <script src="task-catalog.js" defer></script>
+    <script src="mock-tools.js" defer></script>
+    <script src="policies.js" defer></script>
+    <script src="storage.js" defer></script>
+    <script src="scenarios.js" defer></script>
+    <script src="runtime.js" defer></script>
     <script src="app.js" defer></script>
   </body>
 </html>

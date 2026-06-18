@@ -4,6 +4,10 @@ const iconByType = {
   tool: "icon-tool",
   message: "icon-mail",
   guardrail: "icon-shield",
+  human_task: "icon-shield",
+  decision: "icon-bot",
+  outcome: "icon-zap",
+  terminal: "icon-stop",
 };
 
 const typeLabels = {
@@ -12,6 +16,10 @@ const typeLabels = {
   tool: "Tool call",
   message: "Messaggio",
   guardrail: "Guardrail",
+  human_task: "Task umano",
+  decision: "Decisione",
+  outcome: "Outcome",
+  terminal: "Terminale",
 };
 
 const paletteItems = [
@@ -884,6 +892,53 @@ if (catalog) {
   flows.push(...catalog.flows);
 }
 
+const pilotDefinitions = window.BNBFLOW_SCENARIOS?.flows || {};
+const runtimeScenarios = window.BNBFLOW_SCENARIOS?.scenarios || [];
+
+Object.values(pilotDefinitions).forEach((definition) => {
+  const flow = flows.find((item) => item.id === definition.id);
+  if (!flow) return;
+  const lanes = new Map();
+  definition.nodes.forEach((node, index) => {
+    const column = Math.min(index, 6);
+    const lane = lanes.get(column) || 0;
+    lanes.set(column, lane + 1);
+    node.__editorPosition = { x: 36 + column * 286, y: 54 + lane * 205 };
+  });
+  const explicitPositions = {
+    "online-checkin": {
+      "access-event": [36, 300], "verify-access-prerequisites": [322, 300], "complete-documents": [608, 44], "verify-identity": [608, 260], "secure-payment": [608, 476],
+      "create-temporary-access": [894, 260], "send-access-instructions": [1180, 170], "record-access-pms": [1466, 170], "access-completed": [1752, 170], "access-failed": [1180, 500],
+    },
+    maintenance: {
+      "issue-event": [36, 300], "triage-issue": [322, 300], "send-self-help": [608, 40], "authorize-technical-access": [608, 250], "critical-takeover": [608, 470],
+      "create-maintenance-ticket": [894, 250], "dispatch-vendor": [1180, 250], "resolve-guest-issue": [1180, 500], "notify-issue-resolution": [1466, 190], "record-issue-pms": [1752, 190], "issue-completed": [2038, 190], "issue-failed": [1466, 510],
+    },
+    "refund-request": {
+      "refund-event": [36, 300], "assess-refund": [322, 300], "approve-refund": [608, 80], "execute-refund": [894, 180], "resolve-refund": [894, 430],
+      "communicate-rejection": [608, 520], "communicate-refund": [1180, 180], "record-refund-pms": [1466, 260], "refund-completed": [1752, 260], "refund-failed": [1180, 520],
+    },
+  }[definition.id] || {};
+  flow.runtimeVersion = definition.version;
+  flow.businessGoal = definition.businessGoal;
+  flow.successContract = structuredClone(definition.successContract);
+  flow.nodes = definition.nodes.map((node) => {
+    const [x, y] = explicitPositions[node.id] || [node.__editorPosition.x, node.__editorPosition.y];
+    return {
+      ...structuredClone(node),
+      x,
+      y,
+      description: node.description || `${typeLabels[node.type] || "Step"} del runtime orientato a ${node.businessGoal || definition.businessGoal}.`,
+      condition: node.type === "decision" ? "Routing deterministico su outcome strutturato" : "",
+      params: node.tool ? { idempotency_key: node.idempotencyKey, timeout_seconds: node.timeoutSeconds || 15 } : {},
+      guardrail: node.fallbackTaskKey ? `Failure definitiva → ${window.BNBFLOW_TASKS.taskCatalog[node.fallbackTaskKey]?.title || node.fallbackTaskKey}` : "Ogni decisione e azione viene registrata nell'audit.",
+    };
+  });
+  flow.edges = definition.nodes.flatMap((node) => Object.entries(node.outcomes || {}).map(([outcome, to]) => ({ from: node.id, to, outcome })));
+  flow.simulationOrder = definition.nodes.map((node) => node.id);
+  flow.metrics = { ...flow.metrics, runtime: `v${definition.version}`, outcome: definition.businessGoal };
+});
+
 const state = {
   currentFlowId: flows[0].id,
   selectedNodeId: "checkin-agent-verify",
@@ -897,13 +952,29 @@ const state = {
   activeEdges: new Set(),
   closedGroups: new Set(),
   drag: null,
+  activeView: "studio",
+  runtimeRun: null,
+  selectedPilotFlowId: "online-checkin",
+  selectedScenarioId: "access-smartlock-timeout",
+  selectedTaskId: null,
+  selectedFallbackId: null,
+  autoRunTimer: null,
 };
 
 const els = {};
+const runtimeStore = new window.BNBFLOW_STORAGE.RuntimeStore(window.localStorage);
+const runtimeEngine = new window.BNBFLOW_RUNTIME.FlowRuntime({
+  onChange(run) {
+    state.runtimeRun = run;
+    runtimeStore.save({ run });
+    if (els.runPath) renderRuntimeSurfaces();
+  },
+});
 
 document.addEventListener("DOMContentLoaded", () => {
   cacheElements();
   hydrateSavedState();
+  hydrateRuntimeState();
   bindEvents();
   renderAll();
 });
@@ -936,6 +1007,43 @@ function cacheElements() {
   els.nodeToolInput = document.querySelector("#nodeToolInput");
   els.nodeParamsInput = document.querySelector("#nodeParamsInput");
   els.guardrailText = document.querySelector("#guardrailText");
+  els.nodeBusinessGoalInput = document.querySelector("#nodeBusinessGoalInput");
+  els.nodeCapabilityInput = document.querySelector("#nodeCapabilityInput");
+  els.nodeSuccessContractInput = document.querySelector("#nodeSuccessContractInput");
+  els.nodeCompleteness = document.querySelector("#nodeCompleteness");
+  els.nodeTimeoutInput = document.querySelector("#nodeTimeoutInput");
+  els.nodeAttemptsInput = document.querySelector("#nodeAttemptsInput");
+  els.nodeIdempotencyInput = document.querySelector("#nodeIdempotencyInput");
+  els.nodeOutcomesInput = document.querySelector("#nodeOutcomesInput");
+  els.nodeFallbackInput = document.querySelector("#nodeFallbackInput");
+  els.taskPreview = document.querySelector("#taskPreview");
+  els.appNavItems = [...document.querySelectorAll(".app-nav-item")];
+  els.viewPanels = [...document.querySelectorAll("[data-view-panel]")];
+  els.operationsBadge = document.querySelector("#operationsBadge");
+  els.technicalBadge = document.querySelector("#technicalBadge");
+  els.pilotFlowSelect = document.querySelector("#pilotFlowSelect");
+  els.scenarioSelect = document.querySelector("#scenarioSelect");
+  els.scenarioSummary = document.querySelector("#scenarioSummary");
+  els.latencyInput = document.querySelector("#latencyInput");
+  els.latencyOutput = document.querySelector("#latencyOutput");
+  els.startScenarioButton = document.querySelector("#startScenarioButton");
+  els.stepRunButton = document.querySelector("#stepRunButton");
+  els.autoRunButton = document.querySelector("#autoRunButton");
+  els.resetRunButton = document.querySelector("#resetRunButton");
+  els.simulatorRunStatus = document.querySelector("#simulatorRunStatus");
+  els.runTitle = document.querySelector("#runTitle");
+  els.runId = document.querySelector("#runId");
+  els.runKpis = document.querySelector("#runKpis");
+  els.runPath = document.querySelector("#runPath");
+  els.liveTask = document.querySelector("#liveTask");
+  els.liveAudit = document.querySelector("#liveAudit");
+  els.operationsStat = document.querySelector("#operationsStat");
+  els.operationsList = document.querySelector("#operationsList");
+  els.operationsDetail = document.querySelector("#operationsDetail");
+  els.technicalStat = document.querySelector("#technicalStat");
+  els.technicalList = document.querySelector("#technicalList");
+  els.auditStat = document.querySelector("#auditStat");
+  els.auditTimeline = document.querySelector("#auditTimeline");
 }
 
 function bindEvents() {
@@ -952,6 +1060,30 @@ function bindEvents() {
   els.runtimeTerminalToggle.addEventListener("click", () => {
     setRuntimeTerminalOpen(!state.runtimeTerminalOpen);
   });
+
+  els.appNavItems.forEach((item) => item.addEventListener("click", () => setActiveView(item.dataset.view)));
+  els.pilotFlowSelect.addEventListener("change", () => {
+    state.selectedPilotFlowId = els.pilotFlowSelect.value;
+    const first = runtimeScenarios.find((scenario) => scenario.flowId === state.selectedPilotFlowId);
+    state.selectedScenarioId = first?.id || "";
+    renderScenarioControls();
+  });
+  els.scenarioSelect.addEventListener("change", () => {
+    state.selectedScenarioId = els.scenarioSelect.value;
+    renderScenarioControls();
+  });
+  els.latencyInput.addEventListener("input", () => { els.latencyOutput.value = `${els.latencyInput.value} ms`; });
+  els.startScenarioButton.addEventListener("click", startSelectedScenario);
+  els.stepRunButton.addEventListener("click", stepRuntime);
+  els.autoRunButton.addEventListener("click", toggleAutoRun);
+  els.resetRunButton.addEventListener("click", resetRuntime);
+  els.operationsList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-task-id]");
+    if (!button) return;
+    state.selectedTaskId = button.dataset.taskId;
+    renderOperationsInbox();
+  });
+  els.operationsDetail.addEventListener("click", handleTaskDetailClick);
 
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -989,12 +1121,42 @@ function bindEvents() {
     }
   });
 
+  [
+    ["nodeBusinessGoalInput", "businessGoal"],
+    ["nodeCapabilityInput", "capability"],
+    ["nodeIdempotencyInput", "idempotencyKey"],
+  ].forEach(([elementKey, field]) => {
+    els[elementKey].addEventListener("input", (event) => {
+      const node = getSelectedNode();
+      if (!node) return;
+      node[field] = event.target.value;
+      renderCanvas();
+    });
+  });
+  [["nodeTimeoutInput", "timeoutSeconds"], ["nodeAttemptsInput", "maxAttempts"]].forEach(([elementKey, field]) => {
+    els[elementKey].addEventListener("input", (event) => {
+      const node = getSelectedNode();
+      if (!node) return;
+      node[field] = Number(event.target.value || 0);
+      renderCanvas();
+    });
+  });
+  bindJsonEditor(els.nodeSuccessContractInput, "successContract");
+  bindJsonEditor(els.nodeOutcomesInput, "outcomes");
+  els.nodeFallbackInput.addEventListener("input", (event) => {
+    const node = getSelectedNode();
+    if (!node) return;
+    node.fallbackPlaybook = event.target.value.split("\n").map((item) => item.trim()).filter(Boolean);
+    renderInspectorCompleteness(node);
+  });
+
   window.addEventListener("resize", renderConnectors);
   document.addEventListener("pointermove", onPointerMove);
   document.addEventListener("pointerup", onPointerUp);
 }
 
 function renderAll() {
+  renderViewRouter();
   renderSidebarTabs();
   setRuntimeTerminalVisible(state.runtimeTerminalVisible);
   setRuntimeTerminalOpen(state.runtimeTerminalOpen);
@@ -1004,6 +1166,8 @@ function renderAll() {
   renderCanvas();
   renderInspector();
   renderTabs();
+  renderScenarioControls();
+  renderRuntimeSurfaces();
   renderLog(["Seleziona un flusso o avvia una simulazione per vedere gli step runtime."]);
   setRuntimeStatus("ready", "Pronto");
 }
@@ -1161,6 +1325,14 @@ function renderCanvasHeader() {
 function renderCanvas() {
   const flow = getCurrentFlow();
   els.flowCanvas.innerHTML = "";
+  const canvasWidth = Math.max(1120, ...flow.nodes.map((node) => (node.x || 0) + 290));
+  const canvasHeight = Math.max(780, ...flow.nodes.map((node) => (node.y || 0) + 210));
+  els.flowCanvas.style.width = `${canvasWidth}px`;
+  els.flowCanvas.style.minHeight = `${canvasHeight}px`;
+  els.connectorLayer.setAttribute("width", canvasWidth);
+  els.connectorLayer.setAttribute("height", canvasHeight);
+  els.connectorLayer.style.width = `${canvasWidth}px`;
+  els.connectorLayer.style.height = `${canvasHeight}px`;
 
   flow.nodes.forEach((node) => {
     const status = state.nodeStatuses[node.id] || "";
@@ -1172,8 +1344,8 @@ function renderCanvas() {
     card.innerHTML = `
       <header class="node-card-header">
         <span class="node-kind">
-          <svg><use href="#${iconByType[node.type]}"></use></svg>
-          ${escapeHtml(typeLabels[node.type])}
+          <svg><use href="#${iconByType[node.type] || "icon-tool"}"></use></svg>
+          ${escapeHtml(typeLabels[node.type] || node.type)}
         </span>
         <span class="node-status"></span>
       </header>
@@ -1182,13 +1354,14 @@ function renderCanvas() {
         <p>${escapeHtml(node.description)}</p>
       </div>
       <footer class="node-footer">
-        <span class="node-pill">${escapeHtml(node.tool || node.condition || "configurabile")}</span>
+        <span class="node-pill">${escapeHtml(node.capability || node.tool || node.condition || "configurabile")}</span>
         <button class="node-open" type="button" aria-label="Apri nodo" title="Apri nodo">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M7 17 17 7"></path><path d="M8 7h9v9"></path>
           </svg>
         </button>
       </footer>
+      ${Object.keys(node.outcomes || {}).length ? `<div class="outcome-ports">${Object.keys(node.outcomes).map((outcome) => `<span class="outcome-port outcome-${escapeHtml(outcome)}">${escapeHtml(outcome)}</span>`).join("")}</div>` : ""}
     `;
 
     card.addEventListener("pointerdown", (event) => onNodePointerDown(event, node));
@@ -1206,7 +1379,10 @@ function renderConnectors() {
   const flow = getCurrentFlow();
   els.connectorLayer.innerHTML = "";
 
-  flow.edges.forEach(([fromId, toId]) => {
+  flow.edges.forEach((edge) => {
+    const fromId = Array.isArray(edge) ? edge[0] : edge.from;
+    const toId = Array.isArray(edge) ? edge[1] : edge.to;
+    const outcome = Array.isArray(edge) ? "success" : edge.outcome || "success";
     const from = flow.nodes.find((node) => node.id === fromId);
     const to = flow.nodes.find((node) => node.id === toId);
     if (!from || !to) return;
@@ -1219,8 +1395,16 @@ function renderConnectors() {
     const d = `M ${startX} ${startY} C ${startX + delta} ${startY}, ${endX - delta} ${endY}, ${endX} ${endY}`;
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", d);
-    path.setAttribute("class", `connector-path ${state.activeEdges.has(`${fromId}:${toId}`) ? "is-active" : ""}`);
+    path.setAttribute("class", `connector-path outcome-${outcome} ${state.activeEdges.has(`${fromId}:${toId}`) ? "is-active" : ""}`);
     els.connectorLayer.appendChild(path);
+    if (!Array.isArray(edge)) {
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("x", String((startX + endX) / 2));
+      label.setAttribute("y", String((startY + endY) / 2 - 7));
+      label.setAttribute("class", `connector-label outcome-${outcome}`);
+      label.textContent = outcome;
+      els.connectorLayer.appendChild(label);
+    }
   });
 }
 
@@ -1238,6 +1422,15 @@ function renderInspector() {
   els.nodeToolInput.value = node.tool || "";
   els.nodeParamsInput.value = JSON.stringify(node.params || {}, null, 2);
   els.guardrailText.textContent = node.guardrail || "Nessun guardrail specifico configurato.";
+  els.nodeBusinessGoalInput.value = node.businessGoal || getCurrentFlow().businessGoal || "";
+  els.nodeCapabilityInput.value = node.capability || "";
+  els.nodeSuccessContractInput.value = JSON.stringify(node.successContract || {}, null, 2);
+  els.nodeTimeoutInput.value = node.timeoutSeconds || "";
+  els.nodeAttemptsInput.value = node.maxAttempts || "";
+  els.nodeIdempotencyInput.value = node.idempotencyKey || "";
+  els.nodeOutcomesInput.value = JSON.stringify(node.outcomes || {}, null, 2);
+  els.nodeFallbackInput.value = (node.fallbackPlaybook || []).join("\n");
+  renderInspectorCompleteness(node);
 
   const isAgent = node.type === "agent";
   const hasTool = Boolean(node.tool) || node.type === "tool" || node.type === "message";
@@ -1248,10 +1441,17 @@ function renderInspector() {
 
 function renderTabs() {
   document.querySelectorAll(".tab").forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.tab === state.activeTab);
+    const active = tab.dataset.tab === state.activeTab;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(active));
+    tab.setAttribute("aria-controls", `${tab.dataset.tab}Panel`);
   });
   document.querySelectorAll(".tab-panel").forEach((panel) => {
-    panel.classList.toggle("active", panel.id === `${state.activeTab}Panel`);
+    const active = panel.id === `${state.activeTab}Panel`;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+    panel.setAttribute("role", "tabpanel");
   });
 }
 
@@ -1384,96 +1584,41 @@ function duplicateCurrentFlow() {
 }
 
 function toggleSimulation() {
-  if (state.simulationTimer) {
-    stopSimulation(true);
-  } else {
-    startSimulation();
-  }
+  if (state.autoRunTimer) return stopSimulation(true);
+  const current = getCurrentFlow();
+  if (pilotDefinitions[current.id]) state.selectedPilotFlowId = current.id;
+  setActiveView("simulator");
+  renderScenarioControls();
+  startSimulation();
 }
 
 function startSimulation() {
-  const flow = getCurrentFlow();
-  state.nodeStatuses = {};
-  state.activeEdges = new Set();
-  state.simulationIndex = -1;
-  els.simulateButton.innerHTML = '<svg><use href="#icon-stop"></use></svg><span>Stop</span>';
-  els.simulateButton.setAttribute("aria-label", "Interrompi simulazione");
-  els.simulateButton.setAttribute("title", "Interrompi simulazione");
-  setRuntimeTerminalVisible(true);
-  setRuntimeTerminalOpen(true);
-  setRuntimeStatus("running", "In esecuzione");
-  renderLog(["Evento ricevuto. Preparazione runtime..."], 0);
-  runNextSimulationStep();
-  state.simulationTimer = window.setInterval(runNextSimulationStep, 1150);
+  startSelectedScenario();
+  startAutoRun();
 }
 
 function runNextSimulationStep() {
-  const flow = getCurrentFlow();
-  const order = flow.simulationOrder.filter((nodeId) => flow.nodes.some((node) => node.id === nodeId));
-
-  if (state.simulationIndex >= 0 && order[state.simulationIndex]) {
-    state.nodeStatuses[order[state.simulationIndex]] = "done";
-  }
-
-  state.simulationIndex += 1;
-
-  if (state.simulationIndex >= order.length) {
-    stopSimulation(false);
-    setRuntimeStatus("completed", "Completato");
-    renderLog(buildSimulationLog(flow, order), order.length - 1);
-    showToast("Simulazione completata: tutti gli step principali sono passati.");
-    return;
-  }
-
-  const activeNodeId = order[state.simulationIndex];
-  state.nodeStatuses[activeNodeId] = "running";
-  state.selectedNodeId = activeNodeId;
-  state.activeEdges = new Set(
-    flow.edges
-      .filter(([fromId, toId]) => fromId === order[state.simulationIndex - 1] || toId === activeNodeId)
-      .map(([fromId, toId]) => `${fromId}:${toId}`),
-  );
-
-  renderCanvas();
-  renderInspector();
-  renderLog(buildSimulationLog(flow, order), state.simulationIndex);
+  stepRuntime();
 }
 
 function stopSimulation(showMessage) {
-  if (state.simulationTimer) {
-    window.clearInterval(state.simulationTimer);
-    state.simulationTimer = null;
-  }
+  stopAutoRun();
   els.simulateButton.innerHTML = '<svg><use href="#icon-play"></use></svg><span>Simula</span>';
   els.simulateButton.setAttribute("aria-label", "Avvia simulazione");
   els.simulateButton.setAttribute("title", "Avvia simulazione");
   state.activeEdges = new Set();
   if (showMessage) {
     setRuntimeStatus("stopped", "Interrotto");
-    showToast("Simulazione interrotta.");
+    showToast("Esecuzione automatica in pausa; il run resta riprendibile.");
   }
   setRuntimeTerminalOpen(false);
-  setRuntimeTerminalVisible(false);
+  if (!state.runtimeRun || ["completed", "failed", "cancelled"].includes(state.runtimeRun.status)) setRuntimeTerminalVisible(false);
   renderCanvas();
 }
 
 function buildSimulationLog(flow, order) {
-  return order.map((nodeId, index) => {
-    const node = flow.nodes.find((item) => item.id === nodeId);
-    if (!node) return "Step non disponibile";
-    const verb =
-      node.type === "trigger"
-        ? "Trigger ricevuto"
-        : node.type === "agent"
-          ? "Agente in ragionamento"
-          : node.type === "tool"
-            ? "Tool call eseguita"
-            : node.type === "message"
-              ? "Messaggio preparato"
-              : "Guardrail verificato";
-    const status = index < state.simulationIndex ? "OK" : index === state.simulationIndex ? "RUN" : "WAIT";
-    return `${status} / ${verb}: ${node.name}`;
-  });
+  if (!state.runtimeRun) return [];
+  return state.runtimeRun.audit.slice(-30).map((event) => `${event.sequence.toString().padStart(2, "0")} / ${event.eventType} · ${formatAuditData(event.data)}`);
 }
 
 function onNodePointerDown(event, node) {
@@ -1563,6 +1708,344 @@ function showToast(message) {
   showToast.timer = window.setTimeout(() => {
     els.toast.classList.remove("visible");
   }, 2600);
+}
+
+function bindJsonEditor(element, field) {
+  element.addEventListener("input", (event) => {
+    const node = getSelectedNode();
+    if (!node) return;
+    try {
+      node[field] = JSON.parse(event.target.value || "{}");
+      event.target.classList.remove("has-error");
+      renderInspectorCompleteness(node);
+      renderCanvas();
+    } catch (error) {
+      event.target.classList.add("has-error");
+    }
+  });
+}
+
+function renderInspectorCompleteness(node) {
+  const outcomes = Object.keys(node.outcomes || {});
+  const handledFailure = outcomes.some((item) => ["failed", "timed_out", "policy_blocked", "completed_manually", "completed_with_workaround", "completed_with_alternate_provider"].includes(item));
+  const complete = Boolean(node.businessGoal || getCurrentFlow().businessGoal) && (node.type !== "tool" || handledFailure || node.fallbackTaskKey);
+  els.nodeCompleteness.className = `completeness-box ${complete ? "is-complete" : "has-warning"}`;
+  els.nodeCompleteness.innerHTML = complete
+    ? `<strong>Contratto configurato</strong><span>${outcomes.length} outcome instradati · ${node.fallbackPlaybook?.length || 0} fallback</span>`
+    : `<strong>Ramo critico incompleto</strong><span>Aggiungi outcome di errore o un fallback sul business goal.</span>`;
+  const task = node.fallbackTaskKey ? window.BNBFLOW_TASKS.taskCatalog[node.fallbackTaskKey] : null;
+  els.taskPreview.innerHTML = task
+    ? `<p class="eyebrow">Anteprima task generato</p><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.businessGoal)}</span><p>${escapeHtml(task.proposal)}</p>`
+    : `<p class="eyebrow">Anteprima task</p><span>Nessun task operativo collegato a questo nodo.</span>`;
+}
+
+function setActiveView(view) {
+  if (!els.viewPanels.some((panel) => panel.dataset.viewPanel === view)) return;
+  state.activeView = view;
+  document.body.dataset.activeView = view;
+  const runtimeActive = state.runtimeRun && !["completed", "partially_completed", "failed", "cancelled"].includes(state.runtimeRun.status);
+  if (["studio", "simulator"].includes(view) && runtimeActive) setRuntimeTerminalVisible(true);
+  else setRuntimeTerminalVisible(false);
+  if (view !== "simulator") setRuntimeTerminalOpen(false);
+  renderViewRouter();
+  if (view === "studio") requestAnimationFrame(renderConnectors);
+}
+
+function renderViewRouter() {
+  document.body.dataset.activeView = state.activeView;
+  els.viewPanels?.forEach((panel) => {
+    const active = panel.dataset.viewPanel === state.activeView;
+    panel.hidden = !active;
+    panel.classList.toggle("active", active);
+  });
+  els.appNavItems?.forEach((item) => {
+    const active = item.dataset.view === state.activeView;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-current", active ? "page" : "false");
+  });
+}
+
+function renderScenarioControls() {
+  if (!els.pilotFlowSelect) return;
+  els.pilotFlowSelect.innerHTML = Object.values(pilotDefinitions).map((flow) => `<option value="${escapeHtml(flow.id)}" ${flow.id === state.selectedPilotFlowId ? "selected" : ""}>${escapeHtml(flow.name)}</option>`).join("");
+  const scenarios = runtimeScenarios.filter((scenario) => scenario.flowId === state.selectedPilotFlowId);
+  if (!scenarios.some((scenario) => scenario.id === state.selectedScenarioId)) state.selectedScenarioId = scenarios[0]?.id || "";
+  els.scenarioSelect.innerHTML = scenarios.map((scenario) => `<option value="${escapeHtml(scenario.id)}" ${scenario.id === state.selectedScenarioId ? "selected" : ""}>${escapeHtml(scenario.name)}</option>`).join("");
+  const selected = runtimeScenarios.find((scenario) => scenario.id === state.selectedScenarioId);
+  const failures = Object.entries(selected?.toolPlans || {});
+  els.scenarioSummary.innerHTML = selected
+    ? `<strong>${escapeHtml(selected.name)}</strong><p>${escapeHtml(selected.description)}</p>${failures.length ? `<div class="failure-injection"><span>Failure injection</span>${failures.map(([tool, plan]) => `<code>${escapeHtml(tool)} → ${escapeHtml(plan.behavior)}</code>`).join("")}</div>` : `<div class="success-injection">Provider mock in stato nominale</div>`}`
+    : "";
+}
+
+function startSelectedScenario() {
+  stopAutoRun();
+  const flow = pilotDefinitions[state.selectedPilotFlowId];
+  const scenario = runtimeScenarios.find((item) => item.id === state.selectedScenarioId);
+  if (!flow || !scenario) return;
+  runtimeEngine.start(flow, scenario);
+  state.selectedTaskId = null;
+  state.selectedFallbackId = null;
+  state.nodeStatuses = {};
+  state.activeEdges = new Set();
+  const editorFlow = flows.find((item) => item.id === flow.id);
+  if (editorFlow) {
+    state.currentFlowId = editorFlow.id;
+    state.selectedNodeId = editorFlow.nodes[0]?.id;
+  }
+  setRuntimeTerminalVisible(true);
+  setRuntimeTerminalOpen(true);
+  setRuntimeStatus("running", "In esecuzione");
+  els.simulateButton.innerHTML = '<svg><use href="#icon-stop"></use></svg><span>Pausa</span>';
+  showToast(`Scenario avviato: ${scenario.name}`);
+  renderRuntimeSurfaces();
+}
+
+function stepRuntime() {
+  if (!state.runtimeRun) startSelectedScenario();
+  if (!state.runtimeRun || !["queued", "running"].includes(state.runtimeRun.status)) return;
+  runtimeEngine.advance();
+  syncCanvasWithRuntime();
+}
+
+function toggleAutoRun() {
+  if (state.autoRunTimer) stopAutoRun();
+  else startAutoRun();
+}
+
+function startAutoRun() {
+  if (!state.runtimeRun) startSelectedScenario();
+  if (!state.runtimeRun || !["queued", "running"].includes(state.runtimeRun.status)) return;
+  stopAutoRun();
+  els.autoRunButton.textContent = "Pausa esecuzione";
+  els.simulateButton.innerHTML = '<svg><use href="#icon-stop"></use></svg><span>Pausa</span>';
+  stepRuntime();
+  state.autoRunTimer = window.setInterval(() => {
+    if (!["queued", "running"].includes(state.runtimeRun?.status)) {
+      stopAutoRun();
+      return;
+    }
+    stepRuntime();
+  }, Number(els.latencyInput.value || 420));
+}
+
+function stopAutoRun() {
+  if (state.autoRunTimer) window.clearInterval(state.autoRunTimer);
+  state.autoRunTimer = null;
+  if (els.autoRunButton) els.autoRunButton.textContent = "Esegui fino al blocco";
+  if (els.simulateButton) els.simulateButton.innerHTML = '<svg><use href="#icon-play"></use></svg><span>Simula</span>';
+}
+
+function resetRuntime() {
+  stopAutoRun();
+  runtimeEngine.run = null;
+  runtimeEngine.flow = null;
+  runtimeEngine.scenario = null;
+  state.runtimeRun = null;
+  state.selectedTaskId = null;
+  state.selectedFallbackId = null;
+  state.nodeStatuses = {};
+  state.activeEdges = new Set();
+  runtimeStore.clear();
+  setRuntimeTerminalVisible(false);
+  setRuntimeStatus("ready", "Pronto");
+  renderRuntimeSurfaces();
+  renderCanvas();
+}
+
+function syncCanvasWithRuntime() {
+  const run = state.runtimeRun;
+  if (!run || state.currentFlowId !== run.flowId) return;
+  state.nodeStatuses = {};
+  run.stepRuns.forEach((step) => {
+    state.nodeStatuses[step.nodeId] = step.status === "running" || step.status === "retry_scheduled" ? "running" : step.status === "failed" ? "error" : step.status === "waiting_human" ? "waiting" : "done";
+  });
+  state.selectedNodeId = run.currentNodeId;
+  const completed = run.stepRuns.at(-2)?.nodeId;
+  state.activeEdges = new Set(completed ? [`${completed}:${run.currentNodeId}`] : []);
+  renderCanvas();
+  renderInspector();
+}
+
+function renderRuntimeSurfaces() {
+  if (!els.runPath) return;
+  const run = state.runtimeRun;
+  const openTasks = run?.tasks.filter((task) => ["open", "assigned", "in_progress"].includes(task.status)) || [];
+  const openIssues = run?.technicalIssues.filter((issue) => issue.status === "open") || [];
+  els.operationsBadge.textContent = openTasks.length;
+  els.technicalBadge.textContent = openIssues.length;
+  els.operationsBadge.classList.toggle("has-items", openTasks.length > 0);
+  els.technicalBadge.classList.toggle("has-items", openIssues.length > 0);
+  renderRunInspector();
+  renderOperationsInbox();
+  renderTechnicalInbox();
+  renderAuditTimeline();
+  if (!run) return;
+  renderLog(buildSimulationLog(), run.audit.length - 1);
+  setRuntimeStatus(run.status === "completed" ? "completed" : run.status === "waiting_human" ? "stopped" : "running", translateStatus(run.status));
+  if (["completed", "partially_completed", "failed", "cancelled"].includes(run.status)) {
+    stopAutoRun();
+    setRuntimeTerminalOpen(false);
+    setRuntimeTerminalVisible(false);
+  }
+}
+
+function renderRunInspector() {
+  const run = state.runtimeRun;
+  if (!run) {
+    els.simulatorRunStatus.textContent = "Nessun run";
+    els.simulatorRunStatus.className = "run-status-chip";
+    els.runTitle.textContent = "Pronto per una simulazione";
+    els.runId.textContent = "—";
+    els.runKpis.innerHTML = "";
+    els.runPath.innerHTML = `<div class="empty-panel">Scegli uno scenario e avvialo. Ogni click su “Avanza” esegue una transizione deterministica.</div>`;
+    els.liveTask.innerHTML = "";
+    els.liveAudit.innerHTML = "";
+    return;
+  }
+  els.simulatorRunStatus.textContent = translateStatus(run.status);
+  els.simulatorRunStatus.className = `run-status-chip status-${run.status}`;
+  els.runTitle.textContent = run.scenarioName;
+  els.runId.textContent = run.id;
+  els.runKpis.innerHTML = [
+    ["Step", run.stepRuns.length], ["Tentativi tool", run.toolAttempts.length], ["Task ops", run.tasks.length], ["Issue tecniche", run.technicalIssues.length],
+  ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
+  const flow = pilotDefinitions[run.flowId];
+  els.runPath.innerHTML = flow.nodes.map((node) => {
+    const runs = run.stepRuns.filter((step) => step.nodeId === node.id);
+    const step = runs.at(-1);
+    const active = run.currentNodeId === node.id && ["queued", "running", "waiting_human"].includes(run.status);
+    return `<article class="run-step ${step ? `is-${step.status}` : "is-pending"} ${active ? "is-current" : ""}"><span class="run-step-index">${String(flow.nodes.indexOf(node) + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(node.name)}</strong><span>${escapeHtml(node.capability || node.businessGoal || node.type)}</span></div><div class="run-step-meta">${step?.attempts ? `${step.attempts} tentativi` : ""}<b>${escapeHtml(step ? translateStatus(step.status) : "in attesa")}</b></div></article>`;
+  }).join("");
+  const activeTask = run.tasks.find((task) => ["open", "assigned", "in_progress"].includes(task.status));
+  els.liveTask.innerHTML = activeTask
+    ? `<div class="live-task-card"><span class="priority priority-${activeTask.priority}">${escapeHtml(activeTask.priority)}</span><strong>${escapeHtml(activeTask.title)}</strong><p>${escapeHtml(activeTask.businessGoal)}</p><button class="secondary-action" type="button" data-open-operations="true">Apri Operations Inbox</button></div>`
+    : `<div class="quiet-state">Nessun intervento umano aperto.</div>`;
+  els.liveTask.querySelector("[data-open-operations]")?.addEventListener("click", () => {
+    state.selectedTaskId = activeTask.id;
+    setActiveView("operations");
+    renderOperationsInbox();
+  });
+  els.liveAudit.innerHTML = run.audit.slice(-8).reverse().map(renderAuditEvent).join("");
+}
+
+function renderOperationsInbox() {
+  const tasks = state.runtimeRun?.tasks || [];
+  const openTasks = tasks.filter((task) => ["open", "assigned", "in_progress"].includes(task.status));
+  els.operationsStat.textContent = `${openTasks.length} task ${openTasks.length === 1 ? "aperto" : "aperti"}`;
+  els.operationsList.innerHTML = openTasks.length ? openTasks.map((task) => `<button class="inbox-item ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}"><span class="priority priority-${task.priority}">${escapeHtml(task.priority)}</span><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.businessGoal)}</span><small>SLA ${formatTime(task.slaAt)} · ${escapeHtml(task.assignee || "Non assegnato")}</small></button>`).join("") : `<div class="empty-panel">Nessun task operativo aperto.</div>`;
+  const selected = tasks.find((task) => task.id === state.selectedTaskId) || openTasks[0];
+  if (selected && !state.selectedTaskId) state.selectedTaskId = selected.id;
+  renderTaskDetail(selected);
+}
+
+function renderTaskDetail(task) {
+  if (!task) {
+    els.operationsDetail.innerHTML = `<div class="empty-panel">Avvia uno scenario con fallback umano per popolare la inbox.</div>`;
+    return;
+  }
+  if (task.status === "resolved") {
+    els.operationsDetail.innerHTML = `<div class="resolution-complete"><span>Task risolto</span><h3>${escapeHtml(task.title)}</h3><p>Il flow è ripartito con <code>${escapeHtml(task.resolution.type)}</code>.</p></div>`;
+    return;
+  }
+  const selectedFallback = task.fallbacks.find((fallback) => fallback.id === state.selectedFallbackId) || task.fallbacks[0];
+  state.selectedFallbackId = selectedFallback?.id || null;
+  const defaults = selectedFallback?.defaults || {};
+  els.operationsDetail.innerHTML = `
+    <div class="task-detail-header"><div><p class="eyebrow">Macro-obiettivo</p><h3>${escapeHtml(task.title)}</h3><code>${escapeHtml(task.businessGoal)}</code></div><span class="priority priority-${task.priority}">${escapeHtml(task.priority)}</span></div>
+    <div class="task-context"><div><span>Run</span><strong>${escapeHtml(task.runId)}</strong></div><div><span>SLA</span><strong>${formatTime(task.slaAt)}</strong></div><div><span>Owner</span><strong>${escapeHtml(task.assignee || "Da prendere")}</strong></div></div>
+    ${task.technicalContext ? `<div class="technical-context"><span>Contesto secondario</span><code>${escapeHtml(task.technicalContext.tool)} · ${escapeHtml(task.technicalContext.errorCode)} · ${task.technicalContext.attempts} tentativi</code></div>` : ""}
+    <div class="agent-proposal"><span>Proposta agente</span><p>${escapeHtml(task.proposal)}</p></div>
+    <div class="fallback-options"><span>Strategia di risoluzione</span><div>${task.fallbacks.map((fallback) => `<button type="button" class="fallback-option ${fallback.id === selectedFallback?.id ? "active" : ""}" data-fallback-id="${escapeHtml(fallback.id)}">${escapeHtml(fallback.label)}</button>`).join("")}</div></div>
+    <form id="taskResolutionForm" class="resolution-form">
+      ${(task.successContract.requiredFields || []).map((field) => `<label class="field"><span>${escapeHtml(humanize(field))}</span><input name="${escapeHtml(field)}" value="${escapeHtml(defaults[field] || defaultResolutionValue(field))}" required /></label>`).join("")}
+      <fieldset><legend>Evidenze obbligatorie</legend>${(task.successContract.requiredEvidence || []).map((evidence) => `<label class="check-field"><input type="checkbox" name="evidence" value="${escapeHtml(evidence)}" checked /><span>${escapeHtml(humanize(evidence))}</span></label>`).join("")}</fieldset>
+      <div class="resolution-impact"><strong>Impatto sul flow</strong><span>Completa lo step in attesa e riprende dal nodo successivo. Nessuna azione gia riuscita viene ripetuta.</span></div>
+      <button class="primary-action" type="submit">Conferma e riprendi flow</button>
+    </form>`;
+  els.operationsDetail.querySelector("#taskResolutionForm")?.addEventListener("submit", submitTaskResolution);
+}
+
+function handleTaskDetailClick(event) {
+  const fallback = event.target.closest("[data-fallback-id]");
+  if (fallback) {
+    state.selectedFallbackId = fallback.dataset.fallbackId;
+    renderOperationsInbox();
+  }
+}
+
+function submitTaskResolution(event) {
+  event.preventDefault();
+  const task = state.runtimeRun?.tasks.find((item) => item.id === state.selectedTaskId);
+  if (!task) return;
+  const fallback = task.fallbacks.find((item) => item.id === state.selectedFallbackId) || task.fallbacks[0];
+  const formData = new FormData(event.currentTarget);
+  const fields = {};
+  (task.successContract.requiredFields || []).forEach((field) => { fields[field] = formData.get(field); });
+  const evidence = formData.getAll("evidence");
+  const result = runtimeEngine.resolveTask(task.id, { type: fallback.resolutionType, fields, evidence });
+  if (!result.ok) {
+    showToast(result.errors.join(" · "));
+    return;
+  }
+  showToast("Outcome verificato. Il flow riprende dal punto deterministico.");
+  setActiveView("simulator");
+  startAutoRun();
+}
+
+function renderTechnicalInbox() {
+  const issues = state.runtimeRun?.technicalIssues || [];
+  const open = issues.filter((issue) => issue.status === "open");
+  els.technicalStat.textContent = `${open.length} issue ${open.length === 1 ? "aperta" : "aperte"}`;
+  els.technicalList.innerHTML = issues.length ? issues.map((issue) => `<article class="technical-row"><div><strong>${escapeHtml(issue.provider)}</strong><code>${escapeHtml(issue.tool)}</code></div><code>${escapeHtml(issue.errorCode)}</code><span>${issue.attempts} · ${issue.lastLatencyMs} ms</span><span class="workaround-${issue.operationalWorkaround}">${issue.operationalWorkaround === "active" ? "Attivo · run sbloccato" : "In attesa"}</span><span class="status-pill">${escapeHtml(issue.status)}</span></article>`).join("") : `<div class="empty-panel">Nessuna anomalia tecnica registrata.</div>`;
+}
+
+function renderAuditTimeline() {
+  const events = state.runtimeRun?.audit || [];
+  els.auditStat.textContent = `${events.length} eventi`;
+  els.auditTimeline.innerHTML = events.length ? [...events].reverse().map(renderAuditEvent).join("") : `<li class="empty-panel">La timeline apparira dopo l'avvio di un run.</li>`;
+}
+
+function renderAuditEvent(event) {
+  return `<li class="audit-event"><span class="audit-sequence">${String(event.sequence).padStart(2, "0")}</span><div><strong>${escapeHtml(event.eventType)}</strong><span>${escapeHtml(formatAuditData(event.data))}</span><small>${escapeHtml(event.actor)} · ${formatTime(event.createdAt)}</small></div></li>`;
+}
+
+function formatAuditData(data = {}) {
+  const preferred = data.title || data.nodeId || data.tool || data.taskId || data.outcome || data.status || data.flowId;
+  if (preferred) return String(preferred);
+  return Object.entries(data).slice(0, 2).map(([key, value]) => `${key}: ${typeof value === "object" ? "…" : value}`).join(" · ") || "Evento registrato";
+}
+
+function translateStatus(status) {
+  return ({ queued: "In coda", running: "In esecuzione", waiting_human: "In attesa operatore", waiting_guest: "In attesa ospite", waiting_external: "In attesa esterna", paused: "In pausa", completed: "Completato", partially_completed: "Parziale", failed: "Fallito", cancelled: "Annullato", pending: "In attesa", succeeded: "Riuscito", retry_scheduled: "Retry pianificato", completed_manually: "Completato manualmente", completed_with_alternate_provider: "Provider alternativo", completed_with_workaround: "Workaround", completed_with_equivalent_outcome: "Outcome equivalente" })[status] || status;
+}
+
+function humanize(value) {
+  return String(value).replaceAll("_", " ").replace(/^./, (char) => char.toUpperCase());
+}
+
+function defaultResolutionValue(field) {
+  return ({ valid_from: "15:00", valid_until: "11:30", access_window: "16:00–18:00", resolution_note: "Impatto rimosso e confermato con l'ospite", amount_or_value: "25 EUR", transaction_reference: "MAN-DEMO-001", decision_note: "Evidenze e policy verificate", verification_reference: "VER-DEMO-001", payment_reference: "PAY-DEMO-001", delivery_channel: "SMS", owner: "Duty manager", safety_action: "Ospite messo in sicurezza" })[field] || "Confermato da operatore";
+}
+
+function formatTime(value) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function hydrateRuntimeState() {
+  const snapshot = runtimeStore.load();
+  const run = snapshot?.data?.run;
+  if (!run) return;
+  const flow = pilotDefinitions[run.flowId];
+  const scenario = runtimeScenarios.find((item) => item.id === run.scenarioId);
+  if (!flow || !scenario) return;
+  state.selectedPilotFlowId = run.flowId;
+  state.selectedScenarioId = run.scenarioId;
+  runtimeEngine.restore(flow, scenario, run);
+  const activeTask = run.tasks.find((task) => ["open", "assigned", "in_progress"].includes(task.status));
+  state.selectedTaskId = activeTask?.id || null;
+  syncCanvasWithRuntime();
 }
 
 function hydrateSavedState() {
