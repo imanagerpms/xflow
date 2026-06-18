@@ -6,11 +6,12 @@ Interfaccia low-code interattiva per progettare e simulare automazioni operative
 
 - Canvas visuale con nodi trigger, agenti AI, tool, messaggi e guardrail.
 - Catalogo di 40 playbook realistici, organizzati in 8 aree operative da 5 flussi.
-- Sidebar con gruppi richiudibili, badge Core/Avanzato e ricerca trasversale su nome, descrizione, prompt, trigger e tool.
+- Sidebar con tab separati per catalogo flussi e strumenti di editing; i gruppi restano richiudibili e ricercabili per nome, descrizione, prompt, trigger e tool.
 - 30 flussi Core e 10 flussi Avanzati per coprire prenotazioni, soggiorno, operations, revenue e compliance.
 - Prompt operativi modificabili per ogni sotto-agente.
 - Configurazione di tool call, condizioni e parametri JSON.
 - Simulazione passo-passo con event log.
+- Runtime event log in un terminale bottom allineato all'area di editing, visibile solo durante la simulazione.
 - Salvataggio locale versionato nel browser tramite la chiave `localStorage` `bnbflow-state-v2`.
 - Layout responsive per desktop e mobile.
 

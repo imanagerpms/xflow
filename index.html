@@ -104,7 +104,34 @@
 
       <main class="workspace">
         <aside class="sidebar panel">
-          <section class="flow-browser">
+          <div class="sidebar-tabs" role="tablist" aria-label="Navigazione barra laterale">
+            <button
+              class="sidebar-tab active"
+              id="sidebarFlowsTab"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="sidebarFlowsPanel"
+              data-sidebar-tab="flows"
+            >
+              <svg><use href="#icon-search"></use></svg>
+              Flussi
+            </button>
+            <button
+              class="sidebar-tab"
+              id="sidebarToolsTab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="sidebarToolsPanel"
+              data-sidebar-tab="tools"
+            >
+              <svg><use href="#icon-sliders"></use></svg>
+              Strumenti
+            </button>
+          </div>
+
+          <section class="sidebar-panel flow-browser" id="sidebarFlowsPanel" role="tabpanel" aria-labelledby="sidebarFlowsTab">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Flussi pronti</p>
@@ -121,7 +148,7 @@
             <div class="flow-list" id="flowList" aria-label="Elenco flussi"></div>
           </section>
 
-          <section class="palette">
+          <section class="sidebar-panel palette" id="sidebarToolsPanel" role="tabpanel" aria-labelledby="sidebarToolsTab" hidden>
             <div class="section-heading compact">
               <div>
                 <p class="eyebrow">Blocchi</p>
@@ -129,16 +156,6 @@
               </div>
             </div>
             <div class="palette-grid" id="paletteGrid"></div>
-          </section>
-
-          <section class="run-log">
-            <div class="section-heading compact">
-              <div>
-                <p class="eyebrow">Runtime</p>
-                <h2>Event log</h2>
-              </div>
-            </div>
-            <ol id="eventLog" class="event-log"></ol>
           </section>
         </aside>
 
@@ -214,6 +231,26 @@
         </aside>
       </main>
     </div>
+
+    <section class="runtime-terminal" id="runtimeTerminal" data-status="ready" aria-label="Runtime event log" aria-hidden="true">
+      <button
+        class="runtime-terminal-toggle"
+        id="runtimeTerminalToggle"
+        type="button"
+        aria-expanded="false"
+        aria-controls="runtimeTerminalBody"
+      >
+        <span class="runtime-terminal-title"><span class="terminal-prompt">›_</span> Runtime event log</span>
+        <span class="runtime-terminal-meta">
+          <span class="terminal-status-dot" aria-hidden="true"></span>
+          <span id="runtimeStatus">Pronto</span>
+          <span class="runtime-terminal-chevron" aria-hidden="true"></span>
+        </span>
+      </button>
+      <div class="runtime-terminal-body" id="runtimeTerminalBody">
+        <ol id="eventLog" class="event-log" aria-live="polite"></ol>
+      </div>
+    </section>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

@@ -13,7 +13,7 @@ L'app e statica e non usa framework o dipendenze:
 - `catalog.js` espone `BNBFLOW_CATALOG` con gli 8 gruppi, i metadata dei flussi base e i flussi generati.
 - `app.js` contiene i 6 flussi base, integra il catalogo, gestisce lo stato UI e tutte le interazioni.
 
-Il catalogo canonico contiene 40 flussi: 8 gruppi da 5, con 30 flussi Core e 10 Avanzati. I flussi sono definiti come nodi ordinati. Ogni nodo puo includere prompt, condizione, funzione tool, parametri JSON e guardrail. Il rendering aggiorna sidebar raggruppata, canvas, connettori, inspector ed event log.
+Il catalogo canonico contiene 40 flussi: 8 gruppi da 5, con 30 flussi Core e 10 Avanzati. I flussi sono definiti come nodi ordinati. Ogni nodo puo includere prompt, condizione, funzione tool, parametri JSON e guardrail. Il rendering aggiorna sidebar a tab, canvas, connettori, inspector e terminale runtime bottom.
 
 ## Regole per le modifiche
 
@@ -23,6 +23,7 @@ Il catalogo canonico contiene 40 flussi: 8 gruppi da 5, con 30 flussi Core e 10 
 - Mantenere il progetto utilizzabile senza build finche non emerge una necessita concreta di backend o framework.
 - Evitare dipendenze per funzionalita ottenibili con API browser standard.
 - Conservare l'ordine dei gruppi definito in `BNBFLOW_CATALOG.groups` e mantenere la ricerca trasversale su nome, descrizione, prompt, trigger e tool.
+- Tenere catalogo flussi e palette di editing in tab distinti; il terminale runtime deve occupare solo l'area di editing ed essere visibile esclusivamente durante una simulazione.
 - Verificare desktop e mobile dopo modifiche al layout.
 - Eseguire almeno `node --check app.js` e `node --check catalog.js` dopo modifiche JavaScript.
 - Non rompere i dati gia salvati in `localStorage`; lo schema corrente usa `bnbflow-state-v2` e salva flussi, selezione e gruppi chiusi.

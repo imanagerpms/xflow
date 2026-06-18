@@ -888,6 +888,9 @@ const state = {
   currentFlowId: flows[0].id,
   selectedNodeId: "checkin-agent-verify",
   activeTab: "config",
+  sidebarTab: "flows",
+  runtimeTerminalOpen: false,
+  runtimeTerminalVisible: false,
   simulationTimer: null,
   simulationIndex: -1,
   nodeStatuses: {},
@@ -915,6 +918,11 @@ function cacheElements() {
   els.flowCanvas = document.querySelector("#flowCanvas");
   els.connectorLayer = document.querySelector("#connectorLayer");
   els.eventLog = document.querySelector("#eventLog");
+  els.sidebarTabs = [...document.querySelectorAll(".sidebar-tab")];
+  els.sidebarPanels = [...document.querySelectorAll(".sidebar-panel")];
+  els.runtimeTerminal = document.querySelector("#runtimeTerminal");
+  els.runtimeTerminalToggle = document.querySelector("#runtimeTerminalToggle");
+  els.runtimeStatus = document.querySelector("#runtimeStatus");
   els.simulateButton = document.querySelector("#simulateButton");
   els.saveButton = document.querySelector("#saveButton");
   els.newFlowButton = document.querySelector("#newFlowButton");
@@ -938,6 +946,12 @@ function bindEvents() {
     persistState();
   });
   els.newFlowButton.addEventListener("click", duplicateCurrentFlow);
+  els.sidebarTabs.forEach((tab) => {
+    tab.addEventListener("click", () => setSidebarTab(tab.dataset.sidebarTab));
+  });
+  els.runtimeTerminalToggle.addEventListener("click", () => {
+    setRuntimeTerminalOpen(!state.runtimeTerminalOpen);
+  });
 
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -981,6 +995,9 @@ function bindEvents() {
 }
 
 function renderAll() {
+  renderSidebarTabs();
+  setRuntimeTerminalVisible(state.runtimeTerminalVisible);
+  setRuntimeTerminalOpen(state.runtimeTerminalOpen);
   renderFlowList();
   renderPalette();
   renderCanvasHeader();
@@ -988,6 +1005,7 @@ function renderAll() {
   renderInspector();
   renderTabs();
   renderLog(["Seleziona un flusso o avvia una simulazione per vedere gli step runtime."]);
+  setRuntimeStatus("ready", "Pronto");
 }
 
 function getCurrentFlow() {
@@ -1237,6 +1255,46 @@ function renderTabs() {
   });
 }
 
+function setSidebarTab(tabId) {
+  if (!["flows", "tools"].includes(tabId)) return;
+  state.sidebarTab = tabId;
+  renderSidebarTabs();
+}
+
+function renderSidebarTabs() {
+  els.sidebarTabs.forEach((tab) => {
+    const isActive = tab.dataset.sidebarTab === state.sidebarTab;
+    tab.classList.toggle("active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+  });
+  els.sidebarPanels.forEach((panel) => {
+    panel.hidden = panel.id !== `sidebar${state.sidebarTab === "flows" ? "Flows" : "Tools"}Panel`;
+  });
+}
+
+function setRuntimeTerminalOpen(isOpen) {
+  state.runtimeTerminalOpen = isOpen;
+  els.runtimeTerminal.classList.toggle("is-open", isOpen);
+  els.runtimeTerminalToggle.setAttribute("aria-expanded", String(isOpen));
+  els.runtimeTerminalToggle.setAttribute("title", isOpen ? "Riduci runtime event log" : "Apri runtime event log");
+  if (isOpen) {
+    requestAnimationFrame(() => {
+      els.eventLog.scrollTop = els.eventLog.scrollHeight;
+    });
+  }
+}
+
+function setRuntimeTerminalVisible(isVisible) {
+  state.runtimeTerminalVisible = isVisible;
+  els.runtimeTerminal.classList.toggle("is-visible", isVisible);
+  els.runtimeTerminal.setAttribute("aria-hidden", String(!isVisible));
+}
+
+function setRuntimeStatus(status, label) {
+  els.runtimeTerminal.dataset.status = status;
+  els.runtimeStatus.textContent = label;
+}
+
 function renderLog(items, liveIndex = -1) {
   els.eventLog.innerHTML = "";
   items.forEach((item, index) => {
@@ -1245,6 +1303,11 @@ function renderLog(items, liveIndex = -1) {
     li.innerHTML = `<span class="event-dot"></span><span>${escapeHtml(item)}</span>`;
     els.eventLog.appendChild(li);
   });
+  if (state.runtimeTerminalOpen) {
+    requestAnimationFrame(() => {
+      els.eventLog.scrollTop = els.eventLog.scrollHeight;
+    });
+  }
 }
 
 function selectFlow(flowId) {
@@ -1261,6 +1324,7 @@ function selectFlow(flowId) {
   renderCanvas();
   renderInspector();
   renderLog([`Flusso caricato: ${flow.name}`]);
+  setRuntimeStatus("ready", "Pronto");
 }
 
 function selectNode(nodeId) {
@@ -1271,6 +1335,7 @@ function selectNode(nodeId) {
 
 function addNode(type) {
   stopSimulation(false);
+  setRuntimeStatus("ready", "Pronto");
   const flow = getCurrentFlow();
   const selected = getSelectedNode();
   const id = `${type}-${Date.now()}`;
@@ -1334,6 +1399,9 @@ function startSimulation() {
   els.simulateButton.innerHTML = '<svg><use href="#icon-stop"></use></svg><span>Stop</span>';
   els.simulateButton.setAttribute("aria-label", "Interrompi simulazione");
   els.simulateButton.setAttribute("title", "Interrompi simulazione");
+  setRuntimeTerminalVisible(true);
+  setRuntimeTerminalOpen(true);
+  setRuntimeStatus("running", "In esecuzione");
   renderLog(["Evento ricevuto. Preparazione runtime..."], 0);
   runNextSimulationStep();
   state.simulationTimer = window.setInterval(runNextSimulationStep, 1150);
@@ -1351,6 +1419,7 @@ function runNextSimulationStep() {
 
   if (state.simulationIndex >= order.length) {
     stopSimulation(false);
+    setRuntimeStatus("completed", "Completato");
     renderLog(buildSimulationLog(flow, order), order.length - 1);
     showToast("Simulazione completata: tutti gli step principali sono passati.");
     return;
@@ -1379,7 +1448,12 @@ function stopSimulation(showMessage) {
   els.simulateButton.setAttribute("aria-label", "Avvia simulazione");
   els.simulateButton.setAttribute("title", "Avvia simulazione");
   state.activeEdges = new Set();
-  if (showMessage) showToast("Simulazione interrotta.");
+  if (showMessage) {
+    setRuntimeStatus("stopped", "Interrotto");
+    showToast("Simulazione interrotta.");
+  }
+  setRuntimeTerminalOpen(false);
+  setRuntimeTerminalVisible(false);
   renderCanvas();
 }
 
@@ -1509,6 +1583,7 @@ function hydrateSavedState() {
         : [],
     );
     state.closedGroups.delete(savedFlow.group);
+    state.sidebarTab = saved.sidebarTab === "tools" ? "tools" : "flows";
   } catch (error) {
     localStorage.removeItem(PERSISTENCE_KEY);
   }
@@ -1523,6 +1598,7 @@ function persistState() {
       currentFlowId: state.currentFlowId,
       selectedNodeId: state.selectedNodeId,
       closedGroups: [...state.closedGroups],
+      sidebarTab: state.sidebarTab,
     }),
   );
 }

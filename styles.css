@@ -274,19 +274,61 @@ svg {
 
 .sidebar {
   display: grid;
-  grid-template-rows: minmax(190px, 1fr) auto minmax(150px, 0.65fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
-.flow-browser,
-.palette,
-.run-log,
+.sidebar-panel,
 .inspector {
   padding: 16px;
 }
 
-.flow-browser,
-.palette {
-  border-bottom: 1px solid var(--line);
+.sidebar-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 12px 12px 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+}
+
+.sidebar-tab {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.sidebar-tab svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar-tab.active {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 2px 8px rgba(31, 46, 42, 0.08);
+}
+
+.sidebar-panel {
+  min-height: 0;
+}
+
+.sidebar-panel[hidden] {
+  display: none;
 }
 
 .flow-browser {
@@ -294,6 +336,12 @@ svg {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
 }
 
 .section-heading {
@@ -521,6 +569,7 @@ svg {
 .palette-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-content: start;
   gap: 8px;
 }
 
@@ -565,23 +614,155 @@ svg {
   line-height: 1.25;
 }
 
+.runtime-terminal {
+  position: fixed;
+  z-index: 40;
+  right: 14px;
+  bottom: 14px;
+  left: 338px;
+  height: 46px;
+  display: grid;
+  grid-template-rows: 46px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(129, 159, 151, 0.28);
+  border-radius: var(--radius);
+  background: #0d1513;
+  color: #dbe8e4;
+  box-shadow: 0 20px 55px rgba(7, 14, 12, 0.32);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(12px);
+  transition:
+    height 0.2s ease,
+    opacity 0.16s ease,
+    transform 0.16s ease,
+    visibility 0.16s ease;
+}
+
+.runtime-terminal.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.runtime-terminal.is-open {
+  height: min(280px, calc(100vh - 106px));
+}
+
+.runtime-terminal-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 14px;
+  border: 0;
+  background: #111d1a;
+  color: inherit;
+  text-align: left;
+}
+
+.runtime-terminal-title,
+.runtime-terminal-meta {
+  display: inline-flex;
+  align-items: center;
+}
+
+.runtime-terminal-title {
+  gap: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.terminal-prompt {
+  color: #52d6b6;
+  font-weight: 900;
+}
+
+.runtime-terminal-meta {
+  flex: 0 0 auto;
+  gap: 8px;
+  color: #91a49f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.terminal-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #82938f;
+}
+
+.runtime-terminal[data-status="running"] .terminal-status-dot {
+  background: #52d6b6;
+  box-shadow: 0 0 0 4px rgba(82, 214, 182, 0.12);
+  animation: terminal-pulse 1.2s ease-in-out infinite;
+}
+
+.runtime-terminal[data-status="completed"] .terminal-status-dot {
+  background: #52d6b6;
+}
+
+.runtime-terminal[data-status="stopped"] .terminal-status-dot {
+  background: #e4b45c;
+}
+
+@keyframes terminal-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.runtime-terminal-chevron {
+  width: 8px;
+  height: 8px;
+  margin: 0 3px 4px 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.16s ease;
+}
+
+.runtime-terminal.is-open .runtime-terminal-chevron {
+  margin-top: 5px;
+  margin-bottom: 0;
+  transform: rotate(225deg);
+}
+
+.runtime-terminal-body {
+  min-height: 0;
+  padding: 8px 14px 14px;
+  border-top: 1px solid rgba(129, 159, 151, 0.18);
+  background:
+    linear-gradient(rgba(82, 214, 182, 0.025) 1px, transparent 1px),
+    #0d1513;
+  background-size: 100% 24px;
+}
+
 .event-log {
-  height: calc(100% - 38px);
-  min-height: 120px;
+  height: 100%;
+  min-height: 0;
   margin: 0;
   padding: 0;
   list-style: none;
   overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .event-log li {
   align-items: flex-start;
   gap: 9px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(129, 159, 151, 0.13);
+  color: #9fb0ab;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .event-dot {
@@ -594,8 +775,12 @@ svg {
 }
 
 .event-log li.is-live .event-dot {
-  background: var(--teal);
-  box-shadow: 0 0 0 4px var(--teal-soft);
+  background: #52d6b6;
+  box-shadow: 0 0 0 4px rgba(82, 214, 182, 0.12);
+}
+
+.event-log li.is-live {
+  color: #effbf7;
 }
 
 .canvas-column {
@@ -993,6 +1178,14 @@ svg {
   transform: translate(-50%, 0);
 }
 
+.runtime-terminal.is-visible:not(.is-open) ~ .toast {
+  bottom: 74px;
+}
+
+.runtime-terminal.is-visible.is-open ~ .toast {
+  bottom: 306px;
+}
+
 @media (max-width: 1180px) {
   .workspace {
     grid-template-columns: 280px minmax(440px, 1fr);
@@ -1001,6 +1194,10 @@ svg {
   .inspector {
     grid-column: 1 / -1;
     min-height: 420px;
+  }
+
+  .runtime-terminal {
+    left: 308px;
   }
 }
 
@@ -1045,12 +1242,11 @@ svg {
   }
 
   .sidebar {
-    grid-template-rows: auto auto auto;
+    display: block;
   }
 
-  .flow-list,
-  .event-log {
-    max-height: 270px;
+  .sidebar-tabs {
+    margin: 10px 10px 0;
   }
 
   .flow-browser {
@@ -1058,8 +1254,23 @@ svg {
   }
 
   .flow-list {
-    min-height: 210px;
+    height: min(440px, 55vh);
+    min-height: 300px;
     flex: none;
+  }
+
+  .runtime-terminal {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+  }
+
+  .runtime-terminal.is-open {
+    height: min(240px, calc(100vh - 90px));
+  }
+
+  .runtime-terminal.is-visible.is-open ~ .toast {
+    bottom: 260px;
   }
 
   .canvas-toolbar {
