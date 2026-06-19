@@ -1,4 +1,4 @@
-# X Dash Flow
+# xFlow
 
 Interfaccia low-code interattiva e runtime outcome-first per progettare, simulare e recuperare automazioni operative per piccoli business.
 
