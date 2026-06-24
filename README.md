@@ -1,12 +1,14 @@
 # xFlow
 
-Interfaccia low-code interattiva e runtime outcome-first per progettare, simulare e recuperare automazioni operative per piccoli business.
+Prototipo di **AI Hospitality Manager / operations control plane** per un property manager multi-struttura. La prima schermata e' un cockpit operativo che coordina hotel, case vacanza, affittacamere, case critici, task umani, runtime, fallback e issue tecniche.
 
 ## Funzionalita
 
+- Manager Cockpit come prima view, con portfolio hospitality, KPI turno, case list, dettaglio operativo e tasklist simulata.
+- Portfolio demo: 5 hotel da 50, 30, 20, 10 e 5 camere, 30 case vacanza e 10 affittacamere da 10 camere ciascuno.
 - Canvas visuale con nodi trigger, decisioni, tool, task umani, outcome e stati terminali.
 - Catalogo hospitality canonico di 40 playbook: 8 aree da 5 flussi, 30 Core e 10 Avanzati.
-- Selettore business con esempi verticali: studio dentistico, ristorante, poliambulatorio e boutique fitness, 15 flow ciascuno.
+- Settori non hospitality nascosti nella UI: la demo e' focalizzata sul property manager.
 - Tre flussi pilota eseguibili end-to-end: check-in e accesso, guasto in soggiorno e richiesta rimborso.
 - State machine per run e step con outcome routing, timeout, retry/backoff e idempotenza simulata.
 - Registry di tool mock con failure injection deterministica e scenari riproducibili.
@@ -46,6 +48,7 @@ La suite usa il test runner integrato di Node e non installa dipendenze. Copre c
 - `index.html`: shell, viste applicative e sprite delle icone.
 - `styles.css`: design system, layout densi e breakpoint responsive.
 - `catalog.js`: gruppi, business demo, metadata e definizioni dei playbook.
+- `case-data.js`: portfolio hospitality, OperationalCase demo, agenti e tasklist simulata.
 - `app.js`: router UI, editor, simulatore, inbox e integrazione del runtime.
 - `runtime.js`: state machine deterministica per run, step, tool attempt e task.
 - `mock-tools.js`: registry tool mock, failure injection e cache di idempotenza.

@@ -103,7 +103,7 @@ const flows = [
           "Valida prenotazione, regole struttura, lingua del cliente e decide quando generare accessi temporanei.",
         condition: "Solo arrivi nelle prossime 72 ore",
         prompt:
-          "Sei il sotto-agente Check-in & Accessi di Casa Livia BnB a Roma. Obiettivo: consegnare istruzioni di ingresso chiare e sicure solo a ospiti autorizzati.\n\nContesto disponibile: prenotazione PMS, dati guest portal, stato pagamenti, regole casa, orario stimato di arrivo, lingua preferita e note operative.\n\nProcedura:\n1. Verifica che prenotazione, pagamento, documento principale e firma privacy siano completi.\n2. Se l'arrivo e' entro 72 ore, crea un link smart lock valido dalla finestra di check-in fino al checkout + 30 minuti.\n3. Scrivi al cliente nella sua lingua, con tono cordiale, concreto e senza promesse non verificate.\n4. Includi indirizzo, piano, citofono, link accesso, regole essenziali e contatto emergenze.\n5. Se rilevi incongruenze su pagamento, documenti o nome ospite, ferma il flusso e crea task per staff.\n\nNon inviare mai codici permanenti. Non mostrare dati personali di altri ospiti. Se il sistema smart lock non risponde, passa a fallback con intervento host.",
+          "Sei il sotto-agente Check-in & Accessi di Costa dell'Ovest. Obiettivo: consegnare istruzioni di ingresso chiare e sicure solo a ospiti autorizzati.\n\nContesto disponibile: prenotazione PMS, dati guest portal, stato pagamenti, regole casa, orario stimato di arrivo, lingua preferita e note operative.\n\nProcedura:\n1. Verifica che prenotazione, pagamento, documento principale e firma privacy siano completi.\n2. Se l'arrivo e' entro 72 ore, crea un link smart lock valido dalla finestra di check-in fino al checkout + 30 minuti.\n3. Scrivi al cliente nella sua lingua, con tono cordiale, concreto e senza promesse non verificate.\n4. Includi indirizzo, piano, citofono, link accesso, regole essenziali e contatto emergenze.\n5. Se rilevi incongruenze su pagamento, documenti o nome ospite, ferma il flusso e crea task per staff.\n\nNon inviare mai codici permanenti. Non mostrare dati personali di altri ospiti. Se il sistema smart lock non risponde, passa a fallback con intervento host.",
         guardrail:
           "Richiede pagamento saldato, documento verificato e finestra accesso limitata.",
       },
@@ -885,7 +885,7 @@ const catalog = window.BNBFLOW_CATALOG;
 const businessProfiles = catalog?.businesses || [
   {
     id: "hospitality",
-    name: "Casa Livia Hospitality",
+    name: "Costa dell'Ovest",
     type: "Hospitality diffusa",
     description: "Appartamenti e camere con operations leggere.",
     groups: catalog?.groups || [],
@@ -907,6 +907,8 @@ if (catalog) {
 
 const pilotDefinitions = window.BNBFLOW_SCENARIOS?.flows || {};
 const runtimeScenarios = window.BNBFLOW_SCENARIOS?.scenarios || [];
+const caseData = window.XFLOW_CASE_DATA || { properties: [], cases: [], tasks: [], agents: [] };
+const hospitalityBusinessProfiles = businessProfiles.filter((business) => business.id === defaultBusinessId);
 
 Object.values(pilotDefinitions).forEach((definition) => {
   const flow = flows.find((item) => item.id === definition.id);
@@ -966,12 +968,16 @@ const state = {
   activeEdges: new Set(),
   closedGroups: new Set(getBusinessGroups(defaultBusinessId).map((group) => group.id)),
   drag: null,
-  activeView: "studio",
+  activeView: "cockpit",
+  selectedCaseId: caseData.cases[0]?.id || null,
   runtimeRun: null,
   selectedPilotFlowId: "online-checkin",
   selectedScenarioId: "access-smartlock-timeout",
   selectedTaskId: null,
   selectedFallbackId: null,
+  taskFilters: { priority: "all", type: "all", date: "", sortBy: "priority" },
+  enabledPropertyIds: new Set((caseData.properties || []).map((property) => property.id)),
+  portfolioOpen: true,
   autoRunTimer: null,
 };
 
@@ -995,6 +1001,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function cacheElements() {
   els.flowList = document.querySelector("#flowList");
+  els.cockpitBriefing = document.querySelector("#cockpitBriefing");
+  els.portfolioToggleButton = document.querySelector("#portfolioToggleButton");
+  els.portfolioToggleSummary = document.querySelector("#portfolioToggleSummary");
+  els.portfolioStrip = document.querySelector("#portfolioStrip");
+  els.cockpitKpis = document.querySelector("#cockpitKpis");
+  els.caseCount = document.querySelector("#caseCount");
+  els.caseList = document.querySelector("#caseList");
+  els.caseDetail = document.querySelector("#caseDetail");
+  els.cockpitTaskCount = document.querySelector("#cockpitTaskCount");
+  els.cockpitTaskList = document.querySelector("#cockpitTaskList");
+  els.taskPriorityFilter = document.querySelector("#taskPriorityFilter");
+  els.taskTypeFilter = document.querySelector("#taskTypeFilter");
+  els.taskDateFilter = document.querySelector("#taskDateFilter");
+  els.taskSortSelect = document.querySelector("#taskSortSelect");
+  els.startSelectedCaseButton = document.querySelector("#startSelectedCaseButton");
+  els.openSelectedCaseStudioButton = document.querySelector("#openSelectedCaseStudioButton");
   els.flowSearch = document.querySelector("#flowSearch");
   els.businessSelect = document.querySelector("#businessSelect");
   els.businessType = document.querySelector("#businessType");
@@ -1083,6 +1105,49 @@ function bindEvents() {
   });
 
   els.appNavItems.forEach((item) => item.addEventListener("click", () => setActiveView(item.dataset.view)));
+  els.caseList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-case-id]");
+    if (!button) return;
+    state.selectedCaseId = button.dataset.caseId;
+    renderCockpit();
+  });
+  els.cockpitTaskList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-task-id]");
+    if (!button) return;
+    state.selectedTaskId = button.dataset.taskId;
+    const task = getHomepageTasks().find((item) => item.id === state.selectedTaskId);
+    if (task?.caseId) state.selectedCaseId = task.caseId;
+    renderCockpit();
+  });
+  els.cockpitTaskList?.addEventListener("dblclick", (event) => {
+    const button = event.target.closest("[data-task-id]");
+    if (!button) return;
+    state.selectedTaskId = button.dataset.taskId;
+    setActiveView("operations");
+    renderOperationsInbox();
+  });
+  els.portfolioStrip?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-toggle-property]");
+    if (!button) return;
+    togglePropertyFilter(button.dataset.toggleProperty);
+  });
+  els.portfolioToggleButton?.addEventListener("click", () => {
+    state.portfolioOpen = !state.portfolioOpen;
+    renderCockpit();
+  });
+  els.startSelectedCaseButton?.addEventListener("click", () => startCaseScenario(state.selectedCaseId, { stayInCockpit: true }));
+  els.openSelectedCaseStudioButton?.addEventListener("click", () => openCaseStudio(state.selectedCaseId));
+  [
+    ["taskPriorityFilter", "priority"],
+    ["taskTypeFilter", "type"],
+    ["taskDateFilter", "date"],
+    ["taskSortSelect", "sortBy"],
+  ].forEach(([elementKey, filterKey]) => {
+    els[elementKey]?.addEventListener("input", (event) => {
+      state.taskFilters[filterKey] = event.target.value;
+      renderCockpit();
+    });
+  });
   els.pilotFlowSelect.addEventListener("change", () => {
     state.selectedPilotFlowId = els.pilotFlowSelect.value;
     const first = runtimeScenarios.find((scenario) => scenario.flowId === state.selectedPilotFlowId);
@@ -1176,8 +1241,261 @@ function bindEvents() {
   document.addEventListener("pointerup", onPointerUp);
 }
 
+function renderCockpit() {
+  if (!els.cockpitTaskList) return;
+  const totalRooms = caseData.properties.reduce((sum, property) => sum + (property.rooms || 0), 0);
+  const totalUnits = caseData.properties.length;
+  const allTasks = getHomepageTasks();
+  const filteredTasks = getFilteredHomepageTasks(allTasks);
+  const criticalCases = caseData.cases.filter((item) => ["critica", "alta"].includes(item.severity)).length;
+  const selected = getSelectedCase();
+
+  els.cockpitBriefing.textContent = `Gestione attiva di ${totalRooms} camere su ${totalUnits} strutture/unita: 5 hotel, 30 case vacanza e 10 affittacamere da 10 camere. ${criticalCases} case richiedono attenzione manageriale.`;
+  els.portfolioStrip.innerHTML = caseData.properties.map((property) => renderPropertyCard(property)).join("");
+  els.portfolioStrip.hidden = !state.portfolioOpen;
+  els.portfolioToggleButton?.setAttribute("aria-expanded", String(state.portfolioOpen));
+  if (els.portfolioToggleSummary) {
+    els.portfolioToggleSummary.textContent = `${state.enabledPropertyIds.size}/${caseData.properties.length} accese`;
+  }
+  els.cockpitKpis.innerHTML = [
+    ["Camere gestite", totalRooms],
+    ["Occupazione media", `${Math.round(averageOccupancy() * 100)}%`],
+    ["Case a rischio", criticalCases],
+    ["Task aperti", allTasks.length],
+  ].map(([label, value]) => `<article class="cockpit-kpi panel"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`).join("");
+  if (els.caseCount) els.caseCount.textContent = `${caseData.cases.length} case`;
+  if (els.caseList) els.caseList.innerHTML = caseData.cases.map((caseItem) => renderCaseCard(caseItem)).join("");
+  if (els.caseDetail) renderSelectedCase(selected);
+  renderTaskFilters(allTasks);
+  els.cockpitTaskCount.textContent = `${filteredTasks.length}/${allTasks.length} task`;
+  els.cockpitTaskList.innerHTML = filteredTasks.length
+    ? filteredTasks.map(renderHomepageTask).join("")
+    : `<div class="empty-panel">Nessun task corrisponde alle strutture accese e ai filtri selezionati.</div>`;
+  if (els.startSelectedCaseButton) els.startSelectedCaseButton.disabled = !selected?.scenarioId;
+  if (els.openSelectedCaseStudioButton) els.openSelectedCaseStudioButton.disabled = !selected?.flowId;
+}
+
+function renderTaskFilters(tasks) {
+  if (!els.taskPriorityFilter) return;
+  const priorities = [...new Set(tasks.map((task) => task.priority))];
+  const types = [...new Set(tasks.map((task) => task.type))];
+  renderSelectOptions(els.taskPriorityFilter, [["all", "Tutte"], ...priorities.map((priority) => [priority, humanize(priority)])], state.taskFilters.priority);
+  renderSelectOptions(els.taskTypeFilter, [["all", "Tutte"], ...types.map((type) => [type, type])], state.taskFilters.type);
+  renderSelectOptions(els.taskSortSelect, [["priority", "Priorita"], ["type", "Tipologia"], ["property", "Nome struttura"]], state.taskFilters.sortBy);
+  els.taskDateFilter.value = state.taskFilters.date;
+}
+
+function renderSelectOptions(select, options, value) {
+  select.innerHTML = options.map(([optionValue, label]) => `<option value="${escapeHtml(optionValue)}" ${optionValue === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+}
+
+function getHomepageTasks() {
+  const demoTasks = caseData.tasks.filter((task) => task.status !== "done").map(normalizeDemoTask);
+  const runtimeTasks = (state.runtimeRun?.tasks || [])
+    .filter((task) => ["open", "assigned", "in_progress"].includes(task.status))
+    .map(normalizeRuntimeTask);
+  return [...runtimeTasks, ...demoTasks];
+}
+
+function normalizeDemoTask(task) {
+  const property = caseData.properties.find((item) => item.id === task.propertyId);
+  return {
+    id: task.id,
+    caseId: task.caseId,
+    source: "demo",
+    title: task.title,
+    priority: task.priority,
+    type: task.type,
+    propertyId: task.propertyId,
+    propertyName: property?.name || task.unit,
+    room: task.room || task.unit,
+    guest: task.guest,
+    bookingId: task.bookingId,
+    arrivalTime: task.arrivalTime || task.due,
+    checkinDate: task.checkinDate,
+    checkoutDate: task.checkoutDate,
+    owner: task.owner,
+    due: task.due,
+  };
+}
+
+function normalizeRuntimeTask(task) {
+  const caseItem = getSelectedCase();
+  const property = getCaseProperty(caseItem);
+  return {
+    id: task.id,
+    caseId: caseItem?.id || null,
+    source: "runtime",
+    title: task.title,
+    priority: task.priority,
+    type: runtimeTaskType(task),
+    propertyId: property?.id || "runtime",
+    propertyName: property?.name || "Runtime scenario",
+    room: caseItem?.unit || "Camera da scenario",
+    guest: caseItem?.guest || "Ospite scenario",
+    bookingId: caseItem?.bookingId || task.runId,
+    arrivalTime: caseItem?.eta || formatTime(task.slaAt),
+    checkinDate: "2026-06-24",
+    checkoutDate: "2026-06-27",
+    owner: task.assignee || "Da assegnare",
+    due: formatTime(task.slaAt),
+  };
+}
+
+function runtimeTaskType(task) {
+  if (task.businessGoal === "guest_can_access_property") return "Accessi";
+  if (task.businessGoal === "refund_request_is_resolved") return "Revenue";
+  if (task.businessGoal === "guest_issue_is_safely_resolved") return "Guest recovery";
+  return "Runtime";
+}
+
+function getFilteredHomepageTasks(tasks) {
+  const { priority, type, date, sortBy } = state.taskFilters;
+  return tasks
+    .filter((task) => state.enabledPropertyIds.has(task.propertyId))
+    .filter((task) => priority === "all" || task.priority === priority)
+    .filter((task) => type === "all" || task.type === type)
+    .filter((task) => !date || task.checkinDate === date)
+    .sort((a, b) => compareHomepageTasks(a, b, sortBy));
+}
+
+function compareHomepageTasks(a, b, sortBy) {
+  const priorityRank = { critica: 0, alta: 1, media: 2, bassa: 3 };
+  if (sortBy === "type") return a.type.localeCompare(b.type, "it") || (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9);
+  if (sortBy === "property") return a.propertyName.localeCompare(b.propertyName, "it") || (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9);
+  return (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9) || a.due.localeCompare(b.due, "it");
+}
+
+function renderPropertyCard(property) {
+  const activeCases = caseData.cases.filter((caseItem) => caseItem.propertyId === property.id).length;
+  const label = property.type === "Casa vacanza" ? "1 appartamento" : "1 struttura";
+  const enabled = state.enabledPropertyIds.has(property.id);
+  return `
+    <button class="property-card property-${escapeHtml(property.status)} ${enabled ? "is-enabled" : "is-disabled"}" type="button" data-toggle-property="${escapeHtml(property.id)}" aria-pressed="${enabled}">
+      <div><strong>${escapeHtml(property.name)}</strong><span>${escapeHtml(property.type)} · ${escapeHtml(property.area)}</span></div>
+      <div class="property-metrics"><b>${property.rooms}</b><span>camere</span><b>${Math.round(property.occupancy * 100)}%</b><span>occ.</span><b>${activeCases}</b><span>case</span></div>
+      <small>${escapeHtml(label)} · ${enabled ? "acceso" : "spento"}</small>
+    </button>`;
+}
+
+function togglePropertyFilter(propertyId) {
+  if (!caseData.properties.some((property) => property.id === propertyId)) return;
+  if (state.enabledPropertyIds.has(propertyId)) {
+    if (state.enabledPropertyIds.size === 1) return;
+    state.enabledPropertyIds.delete(propertyId);
+  } else {
+    state.enabledPropertyIds.add(propertyId);
+  }
+  renderCockpit();
+}
+
+function renderCaseCard(caseItem) {
+  const property = getCaseProperty(caseItem);
+  const runtimeStatus = deriveCaseRuntimeStatus(caseItem);
+  return `
+    <button class="case-card ${caseItem.id === state.selectedCaseId ? "active" : ""}" type="button" data-case-id="${escapeHtml(caseItem.id)}">
+      <span class="priority priority-${escapeHtml(caseItem.severity)}">${escapeHtml(caseItem.severity)}</span>
+      <strong>${escapeHtml(caseItem.title)}</strong>
+      <span>${escapeHtml(caseItem.guest)} · ${escapeHtml(caseItem.unit)}</span>
+      <small>${escapeHtml(property?.name || "Portfolio")} · ETA ${escapeHtml(caseItem.eta)} · ${escapeHtml(runtimeStatus)}</small>
+    </button>`;
+}
+
+function renderSelectedCase(caseItem) {
+  if (!caseItem) {
+    els.caseDetail.innerHTML = `<div class="empty-panel">Nessun case selezionato.</div>`;
+    return;
+  }
+  const property = getCaseProperty(caseItem);
+  els.caseDetail.innerHTML = `
+    <div class="case-detail-header">
+      <div>
+        <p class="eyebrow">${escapeHtml(property?.name || "Portfolio")} · ${escapeHtml(caseItem.channel)}</p>
+        <h3>${escapeHtml(caseItem.title)}</h3>
+        <span>${escapeHtml(caseItem.guest)} · ${escapeHtml(caseItem.bookingId)} · ${escapeHtml(caseItem.unit)} · ETA ${escapeHtml(caseItem.eta)}</span>
+      </div>
+      <span class="priority priority-${escapeHtml(caseItem.severity)}">${escapeHtml(caseItem.severity)}</span>
+    </div>
+    <p class="case-summary">${escapeHtml(caseItem.summary)}</p>
+    <div class="supervisor-box"><span>Decisione AI Duty Manager</span><p>${escapeHtml(caseItem.supervisorDecision)}</p></div>
+    <div class="case-detail-grid">
+      <section><span>Next best actions</span>${renderTagList(caseItem.nextBestActions)}</section>
+      <section><span>Attention queue</span>${renderTagList(caseItem.attention)}</section>
+      <section><span>Fallback operativi</span>${renderTagList(caseItem.fallback)}</section>
+      <section><span>Automation map</span>${renderTagList(caseItem.automations)}</section>
+    </div>
+    <div class="conversation-hub">
+      <span>Conversation hub</span>
+      ${caseItem.conversation.map((message) => `<article><b>${escapeHtml(message.actor)}</b><small>${escapeHtml(message.channel)}</small><p>${escapeHtml(message.text)}</p></article>`).join("")}
+    </div>
+    <div class="success-contract"><span>Success contract</span><code>${escapeHtml(caseItem.successContract)}</code></div>`;
+}
+
+function renderTagList(items) {
+  return `<div class="tag-list">${items.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`;
+}
+
+function renderHomepageTask(task) {
+  return `
+    <button class="cockpit-task ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}">
+      <div class="task-row-main">
+        <span class="priority priority-${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span>
+        <strong>${escapeHtml(task.title)}</strong>
+        <span>${escapeHtml(task.propertyName)} · ${escapeHtml(task.type)}</span>
+      </div>
+      <div class="task-booking-meta">
+        <span>Camera <b>${escapeHtml(task.room)}</b></span>
+        <span>Cliente <b>${escapeHtml(task.guest)}</b></span>
+        <span>Arrivo <b>${escapeHtml(task.arrivalTime)}</b></span>
+        <span>Check-in <b>${formatDateShort(task.checkinDate)}</b></span>
+        <span>Check-out <b>${formatDateShort(task.checkoutDate)}</b></span>
+      </div>
+      <small>${escapeHtml(task.owner)} · entro ${escapeHtml(task.due)} · ${escapeHtml(task.bookingId)}</small>
+    </button>`;
+}
+
+function getSelectedCase() {
+  return caseData.cases.find((caseItem) => caseItem.id === state.selectedCaseId) || caseData.cases[0] || null;
+}
+
+function getCaseProperty(caseItem) {
+  return caseData.properties.find((property) => property.id === caseItem?.propertyId) || null;
+}
+
+function averageOccupancy() {
+  if (!caseData.properties.length) return 0;
+  return caseData.properties.reduce((sum, property) => sum + property.occupancy, 0) / caseData.properties.length;
+}
+
+function deriveCaseRuntimeStatus(caseItem) {
+  const run = state.runtimeRun;
+  if (!run || run.flowId !== caseItem.flowId || run.scenarioId !== caseItem.scenarioId) return caseItem.status;
+  return translateStatus(run.status);
+}
+
+function startCaseScenario(caseId, options = {}) {
+  const caseItem = caseData.cases.find((item) => item.id === caseId);
+  if (!caseItem?.scenarioId || !caseItem.flowId) return;
+  state.selectedCaseId = caseItem.id;
+  state.selectedPilotFlowId = caseItem.flowId;
+  state.selectedScenarioId = caseItem.scenarioId;
+  startSelectedScenario();
+  if (options.stayInCockpit) {
+    setActiveView("cockpit");
+    renderCockpit();
+  }
+}
+
+function openCaseStudio(caseId) {
+  const caseItem = caseData.cases.find((item) => item.id === caseId);
+  if (!caseItem?.flowId) return;
+  selectFlow(caseItem.flowId);
+  setActiveView("studio");
+}
+
 function renderAll() {
   renderViewRouter();
+  renderCockpit();
   renderBusinessSelector();
   renderSidebarTabs();
   setRuntimeTerminalVisible(state.runtimeTerminalVisible);
@@ -1204,15 +1522,16 @@ function getBusinessGroups(businessId = state.activeBusinessId) {
 }
 
 function getVisibleFlows() {
-  return flows.filter((flow) => (flow.businessId || defaultBusinessId) === state.activeBusinessId);
+  return flows.filter((flow) => (flow.businessId || defaultBusinessId) === defaultBusinessId);
 }
 
 function renderBusinessSelector() {
   const business = getBusinessProfile();
   if (els.businessSelect) {
-    els.businessSelect.innerHTML = businessProfiles
+    els.businessSelect.innerHTML = hospitalityBusinessProfiles
       .map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === state.activeBusinessId ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
       .join("");
+    els.businessSelect.disabled = true;
   }
   if (els.businessType) els.businessType.textContent = business.type;
   if (els.businessDescription) els.businessDescription.textContent = business.description;
@@ -1220,7 +1539,7 @@ function renderBusinessSelector() {
 }
 
 function setActiveBusiness(businessId) {
-  if (!businessProfiles.some((business) => business.id === businessId)) return;
+  if (businessId !== defaultBusinessId) return;
   stopSimulation(false);
   state.activeBusinessId = businessId;
   state.currentFlowId = null;
@@ -1999,10 +2318,12 @@ function renderRuntimeSurfaces() {
   const run = state.runtimeRun;
   const openTasks = run?.tasks.filter((task) => ["open", "assigned", "in_progress"].includes(task.status)) || [];
   const openIssues = run?.technicalIssues.filter((issue) => issue.status === "open") || [];
-  els.operationsBadge.textContent = openTasks.length;
+  const demoOpenTasks = caseData.tasks.filter((task) => task.status !== "done");
+  els.operationsBadge.textContent = openTasks.length + demoOpenTasks.length;
   els.technicalBadge.textContent = openIssues.length;
-  els.operationsBadge.classList.toggle("has-items", openTasks.length > 0);
+  els.operationsBadge.classList.toggle("has-items", openTasks.length + demoOpenTasks.length > 0);
   els.technicalBadge.classList.toggle("has-items", openIssues.length > 0);
+  renderCockpit();
   renderRunInspector();
   renderOperationsInbox();
   renderTechnicalInbox();
@@ -2059,11 +2380,46 @@ function renderRunInspector() {
 function renderOperationsInbox() {
   const tasks = state.runtimeRun?.tasks || [];
   const openTasks = tasks.filter((task) => ["open", "assigned", "in_progress"].includes(task.status));
-  els.operationsStat.textContent = `${openTasks.length} task ${openTasks.length === 1 ? "aperto" : "aperti"}`;
-  els.operationsList.innerHTML = openTasks.length ? openTasks.map((task) => `<button class="inbox-item ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}"><span class="priority priority-${task.priority}">${escapeHtml(task.priority)}</span><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.businessGoal)}</span><small>SLA ${formatTime(task.slaAt)} · ${escapeHtml(task.assignee || "Non assegnato")}</small></button>`).join("") : `<div class="empty-panel">Nessun task operativo aperto.</div>`;
-  const selected = tasks.find((task) => task.id === state.selectedTaskId) || openTasks[0];
-  if (selected && !state.selectedTaskId) state.selectedTaskId = selected.id;
-  renderTaskDetail(selected);
+  const demoOpenTasks = caseData.tasks.filter((task) => task.status !== "done");
+  const totalOpen = openTasks.length + demoOpenTasks.length;
+  els.operationsStat.textContent = `${totalOpen} task ${totalOpen === 1 ? "aperto" : "aperti"}`;
+  const runtimeHtml = openTasks.map((task) => `<button class="inbox-item ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}"><span class="priority priority-${task.priority}">${escapeHtml(task.priority)}</span><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.businessGoal)}</span><small>SLA ${formatTime(task.slaAt)} · ${escapeHtml(task.assignee || "Non assegnato")}</small></button>`).join("");
+  const demoHtml = demoOpenTasks.map((task) => `<button class="inbox-item ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}"><span class="priority priority-${task.priority}">${escapeHtml(task.priority)}</span><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.type)} · ${escapeHtml(task.unit)}</span><small>Entro ${escapeHtml(task.due)} · ${escapeHtml(task.owner)}</small></button>`).join("");
+  els.operationsList.innerHTML = totalOpen ? `${runtimeHtml}${demoHtml}` : `<div class="empty-panel">Nessun task operativo aperto.</div>`;
+  const selected = tasks.find((task) => task.id === state.selectedTaskId);
+  const selectedDemoTask = caseData.tasks.find((task) => task.id === state.selectedTaskId);
+  if (!state.selectedTaskId) state.selectedTaskId = openTasks[0]?.id || demoOpenTasks[0]?.id || null;
+  if (selected || openTasks.some((task) => task.id === state.selectedTaskId)) {
+    renderTaskDetail(selected || openTasks.find((task) => task.id === state.selectedTaskId));
+  } else {
+    renderDemoTaskDetail(selectedDemoTask || demoOpenTasks.find((task) => task.id === state.selectedTaskId));
+  }
+}
+
+function renderDemoTaskDetail(task) {
+  if (!task) {
+    els.operationsDetail.innerHTML = `<div class="empty-panel">Nessun task operativo aperto.</div>`;
+    return;
+  }
+  const caseItem = caseData.cases.find((item) => item.id === task.caseId);
+  const property = caseData.properties.find((item) => item.id === task.propertyId);
+  els.operationsDetail.innerHTML = `
+    <div class="task-detail-header"><div><p class="eyebrow">Task operativo simulato</p><h3>${escapeHtml(task.title)}</h3><code>${escapeHtml(task.type)}</code></div><span class="priority priority-${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span></div>
+    <div class="task-context"><div><span>Struttura</span><strong>${escapeHtml(property?.name || task.unit)}</strong></div><div><span>Scadenza</span><strong>${escapeHtml(task.due)}</strong></div><div><span>Owner</span><strong>${escapeHtml(task.owner)}</strong></div></div>
+    <div class="task-booking-detail">
+      <div><span>Camera prenotata</span><strong>${escapeHtml(task.room || task.unit)}</strong></div>
+      <div><span>Cliente</span><strong>${escapeHtml(task.guest)}</strong></div>
+      <div><span>Arrivo</span><strong>${escapeHtml(task.arrivalTime || task.due)}</strong></div>
+      <div><span>Check-in</span><strong>${formatDateShort(task.checkinDate)}</strong></div>
+      <div><span>Check-out</span><strong>${formatDateShort(task.checkoutDate)}</strong></div>
+    </div>
+    <div class="agent-proposal"><span>Raccomandazione AI</span><p>${escapeHtml(task.recommendation)}</p></div>
+    <div class="case-linked-box"><span>Contesto prenotazione</span><p>${escapeHtml(task.guest)} · ${escapeHtml(task.bookingId)} · ${escapeHtml(task.unit)}</p>${caseItem ? `<button class="secondary-action" type="button" data-open-case="${escapeHtml(caseItem.id)}">Apri case nel Cockpit</button>` : ""}</div>`;
+  els.operationsDetail.querySelector("[data-open-case]")?.addEventListener("click", (event) => {
+    state.selectedCaseId = event.currentTarget.dataset.openCase;
+    setActiveView("cockpit");
+    renderCockpit();
+  });
 }
 
 function renderTaskDetail(task) {
@@ -2160,6 +2516,11 @@ function formatTime(value) {
   return new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
+function formatDateShort(value) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`));
+}
+
 function hydrateRuntimeState() {
   const snapshot = runtimeStore.load();
   const run = snapshot?.data?.run;
@@ -2194,9 +2555,7 @@ function hydrateSavedState() {
     });
     flows.splice(0, flows.length, ...merged);
 
-    state.activeBusinessId = businessProfiles.some((business) => business.id === saved.activeBusinessId)
-      ? saved.activeBusinessId
-      : defaultBusinessId;
+    state.activeBusinessId = defaultBusinessId;
     state.currentFlowId = null;
     state.selectedNodeId = null;
     state.closedGroups = new Set(getBusinessGroups().map((group) => group.id));

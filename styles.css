@@ -1463,6 +1463,407 @@ body[data-active-view="simulator"] .runtime-terminal {
   font-size: 12px;
 }
 
+.cockpit-briefing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 12px;
+  padding: 18px;
+}
+
+.cockpit-briefing h2,
+.case-detail-header h3,
+.shift-task-panel h3,
+.case-list-panel h3 {
+  margin: 0;
+}
+
+.cockpit-briefing p {
+  max-width: 860px;
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.cockpit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.portfolio-panel {
+  margin-bottom: 12px;
+  padding: 10px;
+}
+
+.portfolio-toggle {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-weight: 700;
+}
+
+.portfolio-toggle small {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.portfolio-toggle::after {
+  content: "Nascondi";
+  color: var(--teal);
+  font-size: 12px;
+}
+
+.portfolio-toggle[aria-expanded="false"]::after {
+  content: "Mostra";
+}
+
+.portfolio-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  max-height: 286px;
+  overflow: auto;
+  margin-top: 8px;
+}
+
+.property-card {
+  min-height: 112px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+}
+
+.property-card strong,
+.property-card span,
+.property-card small {
+  display: block;
+}
+
+.property-card span,
+.property-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.property-attention {
+  border-color: rgba(215, 99, 75, 0.45);
+  background: #fffaf8;
+}
+
+.property-card.is-enabled {
+  border-color: rgba(22, 124, 112, 0.45);
+  box-shadow: inset 0 3px 0 var(--teal);
+}
+
+.property-card.is-disabled {
+  opacity: 0.45;
+  background: #f3f6f5;
+}
+
+.property-card:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.property-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px 8px;
+}
+
+.property-metrics b {
+  font-size: 18px;
+}
+
+.cockpit-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.cockpit-kpi {
+  padding: 14px;
+}
+
+.cockpit-kpi span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cockpit-kpi strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 24px;
+}
+
+.cockpit-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.shift-task-panel {
+  padding: 14px;
+}
+
+.case-list,
+.cockpit-task-list {
+  display: grid;
+  gap: 8px;
+}
+
+.task-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(150px, 0.9fr) minmax(150px, 0.9fr) minmax(150px, 0.9fr);
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.task-filter-grid .field:last-child {
+  grid-column: auto;
+}
+
+.task-filter-grid select,
+.task-filter-grid input {
+  width: 100%;
+  height: 36px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+}
+
+.case-card,
+.cockpit-task {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  border-radius: var(--radius);
+  padding: 11px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.15fr) minmax(440px, 2fr) minmax(180px, 0.9fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.case-card.active,
+.cockpit-task.active,
+.inbox-item.active {
+  border-color: var(--teal);
+  box-shadow: inset 3px 0 0 var(--teal);
+}
+
+.case-card strong,
+.cockpit-task strong {
+  line-height: 1.25;
+}
+
+.task-row-main {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.case-card span:not(.priority),
+.case-card small,
+.cockpit-task span:not(.priority),
+.cockpit-task small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-booking-meta {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px 10px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.task-booking-meta span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.task-booking-meta b {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cockpit-task small {
+  text-align: right;
+}
+
+.task-booking-detail {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.task-booking-detail div {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+}
+
+.task-booking-detail span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.task-booking-detail strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.case-detail-header span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.case-summary {
+  margin: 12px 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.supervisor-box,
+.success-contract,
+.case-linked-box {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+  padding: 12px;
+}
+
+.supervisor-box span,
+.success-contract span,
+.case-linked-box span,
+.case-detail-grid section > span,
+.conversation-hub > span,
+.agent-proposal span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.supervisor-box p,
+.case-linked-box p {
+  margin: 6px 0 0;
+}
+
+.case-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.tag-list span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.conversation-hub {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.conversation-hub article {
+  border-left: 3px solid var(--line-strong);
+  padding-left: 10px;
+}
+
+.conversation-hub small {
+  margin-left: 8px;
+  color: var(--muted);
+}
+
+.conversation-hub p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.success-contract {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.priority-critica {
+  background: var(--coral-soft);
+  color: var(--red);
+}
+
+.priority-alta {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.priority-media {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.case-linked-box {
+  margin-top: 12px;
+}
+
 .simulator-grid {
   min-height: calc(100% - 106px);
   display: grid;
@@ -2192,6 +2593,30 @@ textarea:focus-visible {
     grid-template-columns: 260px 1fr;
   }
 
+  .portfolio-strip {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+  }
+
+  .cockpit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shift-task-panel {
+    grid-column: 1 / -1;
+  }
+
+  .task-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cockpit-task {
+    grid-template-columns: 1fr;
+  }
+
+  .cockpit-task small {
+    text-align: left;
+  }
+
   .live-panel {
     grid-column: 1 / -1;
   }
@@ -2311,6 +2736,37 @@ textarea:focus-visible {
     align-items: flex-start;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .cockpit-briefing {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .cockpit-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .cockpit-actions button {
+    flex: 1;
+  }
+
+  .portfolio-strip,
+  .cockpit-kpis,
+  .cockpit-grid,
+  .case-detail-grid,
+  .task-filter-grid,
+  .task-booking-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .task-filter-grid .field:last-child {
+    grid-column: auto;
+  }
+
+  .task-booking-meta {
+    grid-template-columns: 1fr;
   }
 
   .simulator-grid,

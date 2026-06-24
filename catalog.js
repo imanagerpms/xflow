@@ -13,7 +13,7 @@
   const businesses = [
     {
       id: "hospitality",
-      name: "Casa Livia Hospitality",
+      name: "Costa dell'Ovest",
       type: "Hospitality diffusa",
       description: "Appartamenti e camere con operations leggere, accessi digitali e guest recovery.",
       groups,

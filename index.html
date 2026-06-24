@@ -74,7 +74,7 @@
           <div class="brand">
             <span class="brand-mark">xF</span>
             <div>
-              <p class="eyebrow">Automation studio</p>
+              <p class="eyebrow">AI Hospitality Manager</p>
               <h1>xFlow</h1>
             </div>
           </div>
@@ -86,7 +86,8 @@
         </div>
         <div class="topbar-center">
           <nav class="app-nav" aria-label="Aree applicative">
-            <button class="app-nav-item active" type="button" data-view="studio">Studio</button>
+            <button class="app-nav-item active" type="button" data-view="cockpit">Cockpit</button>
+            <button class="app-nav-item" type="button" data-view="studio">Studio</button>
             <button class="app-nav-item" type="button" data-view="simulator">Simulatore</button>
             <button class="app-nav-item" type="button" data-view="operations">Operations <span id="operationsBadge">0</span></button>
             <button class="app-nav-item" type="button" data-view="technical">Technical <span id="technicalBadge">0</span></button>
@@ -108,7 +109,50 @@
         </div>
       </header>
 
-      <main class="workspace view-panel active" id="studioView" data-view-panel="studio">
+      <main class="module-view view-panel active" id="cockpitView" data-view-panel="cockpit">
+        <header class="cockpit-briefing panel">
+          <div>
+            <p class="eyebrow">Briefing turno</p>
+            <h2>Portfolio operativo hospitality</h2>
+            <p id="cockpitBriefing">AI Duty Manager in attesa dei dati operativi.</p>
+          </div>
+          <div class="cockpit-actions">
+            <button class="primary-action" id="startSelectedCaseButton" type="button">Avvia caso selezionato</button>
+            <button class="secondary-action" id="openSelectedCaseStudioButton" type="button">Apri Studio</button>
+          </div>
+        </header>
+
+        <section class="portfolio-panel panel">
+          <button class="portfolio-toggle" id="portfolioToggleButton" type="button" aria-expanded="true" aria-controls="portfolioStrip">
+            <span>Strutture</span>
+            <small id="portfolioToggleSummary">Tutte visibili</small>
+          </button>
+          <div class="portfolio-strip" id="portfolioStrip" aria-label="Portfolio strutture"></div>
+        </section>
+
+        <section class="cockpit-kpis" id="cockpitKpis" aria-label="KPI operativi"></section>
+
+        <div class="cockpit-grid">
+          <section class="shift-task-panel panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Task operativi</p>
+                <h3>Priorita del property manager</h3>
+              </div>
+              <span id="cockpitTaskCount" class="view-stat">0 task</span>
+            </div>
+            <div class="task-filter-grid" aria-label="Filtri task homepage">
+              <label class="field"><span>Priorita</span><select id="taskPriorityFilter"></select></label>
+              <label class="field"><span>Tipologia</span><select id="taskTypeFilter"></select></label>
+              <label class="field"><span>Data check-in</span><input id="taskDateFilter" type="date" /></label>
+              <label class="field"><span>Ordina per</span><select id="taskSortSelect"></select></label>
+            </div>
+            <div id="cockpitTaskList" class="cockpit-task-list"></div>
+          </section>
+        </div>
+      </main>
+
+      <main class="workspace view-panel" id="studioView" data-view-panel="studio" hidden>
         <aside class="sidebar panel">
           <div class="sidebar-tabs" role="tablist" aria-label="Navigazione barra laterale">
             <button
@@ -366,6 +410,7 @@
     <script src="storage.js" defer></script>
     <script src="scenarios.js" defer></script>
     <script src="runtime.js" defer></script>
+    <script src="case-data.js" defer></script>
     <script src="app.js" defer></script>
   </body>
 </html>
