@@ -908,7 +908,6 @@ if (catalog) {
 const pilotDefinitions = window.BNBFLOW_SCENARIOS?.flows || {};
 const runtimeScenarios = window.BNBFLOW_SCENARIOS?.scenarios || [];
 const caseData = window.XFLOW_CASE_DATA || { properties: [], cases: [], tasks: [], agents: [] };
-const hospitalityBusinessProfiles = businessProfiles.filter((business) => business.id === defaultBusinessId);
 
 Object.values(pilotDefinitions).forEach((definition) => {
   const flow = flows.find((item) => item.id === definition.id);
@@ -967,6 +966,13 @@ const state = {
   nodeStatuses: {},
   activeEdges: new Set(),
   closedGroups: new Set(getBusinessGroups(defaultBusinessId).map((group) => group.id)),
+  flowFolders: createDefaultFlowFolders(),
+  closedFolderIds: new Set(),
+  selectedFolderId: null,
+  deletedFlowIds: new Set(),
+  flowDialogMode: "create",
+  folderDialogMode: "create",
+  editingFolderId: null,
   drag: null,
   activeView: "cockpit",
   selectedCaseId: caseData.cases[0]?.id || null,
@@ -994,6 +1000,7 @@ const runtimeEngine = new window.BNBFLOW_RUNTIME.FlowRuntime({
 document.addEventListener("DOMContentLoaded", () => {
   cacheElements();
   hydrateSavedState();
+  ensureFlowOrganization();
   hydrateRuntimeState();
   bindEvents();
   renderAll();
@@ -1011,6 +1018,7 @@ function cacheElements() {
   els.caseDetail = document.querySelector("#caseDetail");
   els.cockpitTaskCount = document.querySelector("#cockpitTaskCount");
   els.cockpitTaskList = document.querySelector("#cockpitTaskList");
+  els.cockpitTaskDetail = document.querySelector("#cockpitTaskDetail");
   els.taskPriorityFilter = document.querySelector("#taskPriorityFilter");
   els.taskTypeFilter = document.querySelector("#taskTypeFilter");
   els.taskDateFilter = document.querySelector("#taskDateFilter");
@@ -1018,9 +1026,9 @@ function cacheElements() {
   els.startSelectedCaseButton = document.querySelector("#startSelectedCaseButton");
   els.openSelectedCaseStudioButton = document.querySelector("#openSelectedCaseStudioButton");
   els.flowSearch = document.querySelector("#flowSearch");
-  els.businessSelect = document.querySelector("#businessSelect");
-  els.businessType = document.querySelector("#businessType");
-  els.businessDescription = document.querySelector("#businessDescription");
+  els.companyType = document.querySelector("#companyType");
+  els.companyName = document.querySelector("#companyName");
+  els.companyDescription = document.querySelector("#companyDescription");
   els.flowBrowserTitle = document.querySelector("#flowBrowserTitle");
   els.paletteGrid = document.querySelector("#paletteGrid");
   els.flowTitle = document.querySelector("#flowTitle");
@@ -1037,6 +1045,32 @@ function cacheElements() {
   els.simulateButton = document.querySelector("#simulateButton");
   els.saveButton = document.querySelector("#saveButton");
   els.newFlowButton = document.querySelector("#newFlowButton");
+  els.duplicateFlowButton = document.querySelector("#duplicateFlowButton");
+  els.editFlowButton = document.querySelector("#editFlowButton");
+  els.deleteFlowButton = document.querySelector("#deleteFlowButton");
+  els.newFolderButton = document.querySelector("#newFolderButton");
+  els.newSubfolderButton = document.querySelector("#newSubfolderButton");
+  els.editFolderButton = document.querySelector("#editFolderButton");
+  els.deleteFolderButton = document.querySelector("#deleteFolderButton");
+  els.folderContext = document.querySelector("#folderContext");
+  els.flowCrudDialog = document.querySelector("#flowCrudDialog");
+  els.flowCrudForm = document.querySelector("#flowCrudForm");
+  els.flowCrudTitle = document.querySelector("#flowCrudTitle");
+  els.flowCrudName = document.querySelector("#flowCrudName");
+  els.flowCrudFolder = document.querySelector("#flowCrudFolder");
+  els.flowCrudCategory = document.querySelector("#flowCrudCategory");
+  els.flowCrudTrigger = document.querySelector("#flowCrudTrigger");
+  els.flowCrudLevel = document.querySelector("#flowCrudLevel");
+  els.flowCrudSummary = document.querySelector("#flowCrudSummary");
+  els.closeFlowDialogButton = document.querySelector("#closeFlowDialogButton");
+  els.cancelFlowCrudButton = document.querySelector("#cancelFlowCrudButton");
+  els.folderCrudDialog = document.querySelector("#folderCrudDialog");
+  els.folderCrudForm = document.querySelector("#folderCrudForm");
+  els.folderCrudTitle = document.querySelector("#folderCrudTitle");
+  els.folderCrudName = document.querySelector("#folderCrudName");
+  els.folderCrudParent = document.querySelector("#folderCrudParent");
+  els.closeFolderDialogButton = document.querySelector("#closeFolderDialogButton");
+  els.cancelFolderCrudButton = document.querySelector("#cancelFolderCrudButton");
   els.toast = document.querySelector("#toast");
   els.inspectorTitle = document.querySelector("#inspectorTitle");
   els.nodeBadge = document.querySelector("#nodeBadge");
@@ -1048,6 +1082,7 @@ function cacheElements() {
   els.nodePromptInput = document.querySelector("#nodePromptInput");
   els.nodeToolInput = document.querySelector("#nodeToolInput");
   els.nodeParamsInput = document.querySelector("#nodeParamsInput");
+  els.agentToolsPreview = document.querySelector("#agentToolsPreview");
   els.guardrailText = document.querySelector("#guardrailText");
   els.nodeBusinessGoalInput = document.querySelector("#nodeBusinessGoalInput");
   els.nodeCapabilityInput = document.querySelector("#nodeCapabilityInput");
@@ -1058,6 +1093,7 @@ function cacheElements() {
   els.nodeIdempotencyInput = document.querySelector("#nodeIdempotencyInput");
   els.nodeOutcomesInput = document.querySelector("#nodeOutcomesInput");
   els.nodeFallbackInput = document.querySelector("#nodeFallbackInput");
+  els.agentTaskPolicyPreview = document.querySelector("#agentTaskPolicyPreview");
   els.taskPreview = document.querySelector("#taskPreview");
   els.appNavItems = [...document.querySelectorAll(".app-nav-item")];
   els.viewPanels = [...document.querySelectorAll("[data-view-panel]")];
@@ -1090,13 +1126,25 @@ function cacheElements() {
 
 function bindEvents() {
   els.flowSearch.addEventListener("input", renderFlowList);
-  els.businessSelect?.addEventListener("change", () => setActiveBusiness(els.businessSelect.value));
   els.simulateButton.addEventListener("click", toggleSimulation);
   els.saveButton.addEventListener("click", () => {
     showToast("Configurazione salvata in memoria locale del browser.");
     persistState();
   });
-  els.newFlowButton.addEventListener("click", duplicateCurrentFlow);
+  els.newFlowButton.addEventListener("click", () => openFlowCrudDialog("create"));
+  els.duplicateFlowButton?.addEventListener("click", duplicateCurrentFlow);
+  els.editFlowButton?.addEventListener("click", () => openFlowCrudDialog("edit"));
+  els.deleteFlowButton?.addEventListener("click", deleteCurrentFlow);
+  els.newFolderButton?.addEventListener("click", () => openFolderCrudDialog("create-root"));
+  els.newSubfolderButton?.addEventListener("click", () => openFolderCrudDialog("create-child"));
+  els.editFolderButton?.addEventListener("click", () => openFolderCrudDialog("edit"));
+  els.deleteFolderButton?.addEventListener("click", deleteSelectedFolder);
+  els.flowCrudForm?.addEventListener("submit", submitFlowCrudForm);
+  els.folderCrudForm?.addEventListener("submit", submitFolderCrudForm);
+  els.closeFlowDialogButton?.addEventListener("click", () => closeCrudDialog(els.flowCrudDialog));
+  els.cancelFlowCrudButton?.addEventListener("click", () => closeCrudDialog(els.flowCrudDialog));
+  els.closeFolderDialogButton?.addEventListener("click", () => closeCrudDialog(els.folderCrudDialog));
+  els.cancelFolderCrudButton?.addEventListener("click", () => closeCrudDialog(els.folderCrudDialog));
   els.sidebarTabs.forEach((tab) => {
     tab.addEventListener("click", () => setSidebarTab(tab.dataset.sidebarTab));
   });
@@ -1114,7 +1162,9 @@ function bindEvents() {
   els.cockpitTaskList?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-task-id]");
     if (!button) return;
+    const previousTaskId = state.selectedTaskId;
     state.selectedTaskId = button.dataset.taskId;
+    if (previousTaskId !== state.selectedTaskId) state.selectedFallbackId = null;
     const task = getHomepageTasks().find((item) => item.id === state.selectedTaskId);
     if (task?.caseId) state.selectedCaseId = task.caseId;
     renderCockpit();
@@ -1123,6 +1173,7 @@ function bindEvents() {
     const button = event.target.closest("[data-task-id]");
     if (!button) return;
     state.selectedTaskId = button.dataset.taskId;
+    state.selectedFallbackId = null;
     setActiveView("operations");
     renderOperationsInbox();
   });
@@ -1163,13 +1214,19 @@ function bindEvents() {
   els.stepRunButton.addEventListener("click", stepRuntime);
   els.autoRunButton.addEventListener("click", toggleAutoRun);
   els.resetRunButton.addEventListener("click", resetRuntime);
-  els.operationsList.addEventListener("click", (event) => {
+  els.cockpitTaskDetail?.addEventListener("click", handleTaskDetailClick);
+  els.operationsList?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-task-id]");
     if (!button) return;
+    const previousTaskId = state.selectedTaskId;
     state.selectedTaskId = button.dataset.taskId;
+    if (previousTaskId !== state.selectedTaskId) state.selectedFallbackId = null;
+    const task = getHomepageTasks().find((item) => item.id === state.selectedTaskId);
+    if (task?.caseId) state.selectedCaseId = task.caseId;
     renderOperationsInbox();
+    renderCockpit();
   });
-  els.operationsDetail.addEventListener("click", handleTaskDetailClick);
+  els.operationsDetail?.addEventListener("click", handleTaskDetailClick);
 
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -1247,6 +1304,7 @@ function renderCockpit() {
   const totalUnits = caseData.properties.length;
   const allTasks = getHomepageTasks();
   const filteredTasks = getFilteredHomepageTasks(allTasks);
+  const selectedTask = syncSelectedHomepageTask(filteredTasks);
   const criticalCases = caseData.cases.filter((item) => ["critica", "alta"].includes(item.severity)).length;
   const selected = getSelectedCase();
 
@@ -1271,8 +1329,22 @@ function renderCockpit() {
   els.cockpitTaskList.innerHTML = filteredTasks.length
     ? filteredTasks.map(renderHomepageTask).join("")
     : `<div class="empty-panel">Nessun task corrisponde alle strutture accese e ai filtri selezionati.</div>`;
+  renderCockpitTaskDetail(selectedTask);
   if (els.startSelectedCaseButton) els.startSelectedCaseButton.disabled = !selected?.scenarioId;
   if (els.openSelectedCaseStudioButton) els.openSelectedCaseStudioButton.disabled = !selected?.flowId;
+}
+
+function syncSelectedHomepageTask(tasks) {
+  if (!tasks.length) {
+    state.selectedTaskId = null;
+    state.selectedFallbackId = null;
+    return null;
+  }
+  const selected = tasks.find((task) => task.id === state.selectedTaskId);
+  if (selected) return selected;
+  state.selectedTaskId = tasks[0].id;
+  state.selectedFallbackId = null;
+  return tasks[0];
 }
 
 function renderTaskFilters(tasks) {
@@ -1438,6 +1510,7 @@ function renderTagList(items) {
 function renderHomepageTask(task) {
   return `
     <button class="cockpit-task ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}">
+      <span class="checklist-box" aria-hidden="true"></span>
       <div class="task-row-main">
         <span class="priority priority-${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span>
         <strong>${escapeHtml(task.title)}</strong>
@@ -1452,6 +1525,21 @@ function renderHomepageTask(task) {
       </div>
       <small>${escapeHtml(task.owner)} · entro ${escapeHtml(task.due)} · ${escapeHtml(task.bookingId)}</small>
     </button>`;
+}
+
+function renderCockpitTaskDetail(taskSummary) {
+  if (!els.cockpitTaskDetail) return;
+  if (!taskSummary) {
+    els.cockpitTaskDetail.innerHTML = `<div class="empty-panel">Nessun task operativo nella checklist corrente.</div>`;
+    return;
+  }
+  if (taskSummary.source === "runtime") {
+    const runtimeTask = state.runtimeRun?.tasks.find((task) => task.id === taskSummary.id);
+    renderTaskDetail(runtimeTask, els.cockpitTaskDetail);
+    return;
+  }
+  const demoTask = caseData.tasks.find((task) => task.id === taskSummary.id);
+  renderDemoTaskDetail(demoTask, els.cockpitTaskDetail);
 }
 
 function getSelectedCase() {
@@ -1496,7 +1584,7 @@ function openCaseStudio(caseId) {
 function renderAll() {
   renderViewRouter();
   renderCockpit();
-  renderBusinessSelector();
+  renderCompanyTitle();
   renderSidebarTabs();
   setRuntimeTerminalVisible(state.runtimeTerminalVisible);
   setRuntimeTerminalOpen(state.runtimeTerminalOpen);
@@ -1525,16 +1613,114 @@ function getVisibleFlows() {
   return flows.filter((flow) => (flow.businessId || defaultBusinessId) === defaultBusinessId);
 }
 
-function renderBusinessSelector() {
-  const business = getBusinessProfile();
-  if (els.businessSelect) {
-    els.businessSelect.innerHTML = hospitalityBusinessProfiles
-      .map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === state.activeBusinessId ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
-      .join("");
-    els.businessSelect.disabled = true;
+function createDefaultFlowFolders() {
+  return getBusinessGroups(defaultBusinessId).map((group, index) => ({
+    id: `system-${group.id}`,
+    name: group.label,
+    description: group.description,
+    parentId: null,
+    groupId: group.id,
+    businessId: defaultBusinessId,
+    system: true,
+    sort: index,
+  }));
+}
+
+function normalizeFlowFolders(savedFolders = []) {
+  const defaults = createDefaultFlowFolders();
+  const defaultIds = new Set(defaults.map((folder) => folder.id));
+  const customFolders = savedFolders
+    .filter((folder) => folder?.id && !defaultIds.has(folder.id))
+    .map((folder, index) => ({
+      id: String(folder.id),
+      name: String(folder.name || "Cartella senza nome").trim() || "Cartella senza nome",
+      description: String(folder.description || ""),
+      parentId: folder.parentId ? String(folder.parentId) : null,
+      groupId: folder.groupId ? String(folder.groupId) : null,
+      businessId: folder.businessId || defaultBusinessId,
+      system: false,
+      sort: Number.isFinite(folder.sort) ? folder.sort : defaults.length + index,
+    }));
+  const merged = [...defaults, ...customFolders];
+  const ids = new Set(merged.map((folder) => folder.id));
+  merged.forEach((folder) => {
+    if (folder.parentId && (!ids.has(folder.parentId) || folder.parentId === folder.id)) folder.parentId = null;
+  });
+  return merged;
+}
+
+function ensureFlowOrganization() {
+  state.flowFolders = normalizeFlowFolders(state.flowFolders);
+  const folderIds = new Set(state.flowFolders.map((folder) => folder.id));
+  flows.forEach((flow) => {
+    if (!flow.folderId || !folderIds.has(flow.folderId)) flow.folderId = getDefaultFolderIdForGroup(flow.group);
+  });
+  if (state.selectedFolderId && !folderIds.has(state.selectedFolderId)) state.selectedFolderId = null;
+}
+
+function getDefaultFolderIdForGroup(groupId) {
+  const groupFolder = state.flowFolders.find((folder) => folder.groupId === groupId && folder.system);
+  return groupFolder?.id || state.flowFolders.find((folder) => folder.system)?.id || null;
+}
+
+function getFolder(folderId) {
+  return state.flowFolders.find((folder) => folder.id === folderId) || null;
+}
+
+function getFolderChildren(folderId) {
+  return state.flowFolders
+    .filter((folder) => (folder.parentId || null) === (folderId || null))
+    .sort(compareFolders);
+}
+
+function compareFolders(a, b) {
+  const systemRank = Number(Boolean(b.system)) - Number(Boolean(a.system));
+  if (systemRank) return systemRank;
+  return (a.sort ?? 0) - (b.sort ?? 0) || a.name.localeCompare(b.name, "it");
+}
+
+function getFolderDescendantIds(folderId) {
+  const ids = new Set();
+  const visit = (id) => {
+    getFolderChildren(id).forEach((child) => {
+      ids.add(child.id);
+      visit(child.id);
+    });
+  };
+  visit(folderId);
+  return ids;
+}
+
+function getFolderPath(folderId) {
+  const path = [];
+  const visited = new Set();
+  let current = getFolder(folderId);
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    path.unshift(current.name);
+    current = getFolder(current.parentId);
   }
-  if (els.businessType) els.businessType.textContent = business.type;
-  if (els.businessDescription) els.businessDescription.textContent = business.description;
+  return path;
+}
+
+function getGroupIdForFolder(folderId) {
+  let current = getFolder(folderId);
+  const visited = new Set();
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    if (current.groupId) return current.groupId;
+    current = getFolder(current.parentId);
+  }
+  return null;
+}
+
+function renderCompanyTitle() {
+  const business = getBusinessProfile();
+  const propertyCount = caseData.properties.length;
+  const propertyLabel = propertyCount === 1 ? "1 attività ricettiva" : `${propertyCount} attività ricettive`;
+  if (els.companyType) els.companyType.textContent = business.type || "Hospitality";
+  if (els.companyName) els.companyName.textContent = business.name || "Costa dell'Ovest";
+  if (els.companyDescription) els.companyDescription.textContent = `Gestisce ${propertyLabel}`;
   if (els.flowBrowserTitle) els.flowBrowserTitle.textContent = `Playbook ${business.type}`;
 }
 
@@ -1548,7 +1734,7 @@ function setActiveBusiness(businessId) {
   state.activeEdges = new Set();
   state.closedGroups = new Set(getBusinessGroups().map((group) => group.id));
   if (els.flowSearch) els.flowSearch.value = "";
-  renderBusinessSelector();
+  renderCompanyTitle();
   renderFlowList();
   renderCanvasHeader();
   renderCanvas();
@@ -1569,64 +1755,23 @@ function getSelectedNode() {
 }
 
 function renderFlowList() {
+  ensureFlowOrganization();
   const query = els.flowSearch.value.trim().toLowerCase();
   els.flowList.innerHTML = "";
 
   let matchCount = 0;
   const visibleFlows = getVisibleFlows();
+  const matchedFlows = visibleFlows.filter((flow) => flowMatchesSearch(flow, query));
+  const matchedIds = new Set(matchedFlows.map((flow) => flow.id));
+  matchCount = matchedFlows.length;
 
-  getBusinessGroups().forEach((group) => {
-    const groupFlows = visibleFlows.filter((flow) => flow.group === group.id);
-    const matches = groupFlows.filter((flow) => flowMatchesSearch(flow, query));
-    if (matches.length === 0) return;
-
-    matchCount += matches.length;
-    const isOpen = Boolean(query) || !state.closedGroups.has(group.id);
-    const section = document.createElement("section");
-    section.className = `flow-group ${isOpen ? "is-open" : ""}`;
-
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "flow-group-toggle";
-    toggle.setAttribute("aria-expanded", String(isOpen));
-    toggle.setAttribute("aria-controls", `flow-group-${group.id}`);
-    toggle.innerHTML = `
-      <span class="flow-group-copy">
-        <strong>${escapeHtml(group.label)}</strong>
-        <small>${escapeHtml(group.description)}</small>
-      </span>
-      <span class="flow-group-actions">
-        <span class="flow-group-count">${query ? `${matches.length}/${groupFlows.length}` : groupFlows.length}</span>
-        <span class="flow-group-chevron" aria-hidden="true"></span>
-      </span>
-    `;
-    toggle.addEventListener("click", () => toggleFlowGroup(group.id));
-    section.appendChild(toggle);
-
-    const items = document.createElement("div");
-    items.className = "flow-group-items";
-    items.id = `flow-group-${group.id}`;
-    items.hidden = !isOpen;
-
-    matches.forEach((flow) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `flow-card ${flow.id === state.currentFlowId ? "active" : ""}`;
-      button.innerHTML = `
-        <div class="flow-card-header">
-          <strong>${escapeHtml(flow.name)}</strong>
-          <span class="flow-level ${flow.level === "Avanzato" ? "is-advanced" : ""}">${escapeHtml(flow.level)}</span>
-        </div>
-        <span class="flow-chip">${escapeHtml(flow.category)}</span>
-        <p>${escapeHtml(flow.summary)}</p>
-      `;
-      button.addEventListener("click", () => selectFlow(flow.id));
-      items.appendChild(button);
-    });
-
-    section.appendChild(items);
-    els.flowList.appendChild(section);
+  getFolderChildren(null).forEach((folder) => {
+    const section = renderFolderTree(folder, matchedIds, visibleFlows, query, 0);
+    if (section) els.flowList.appendChild(section);
   });
+
+  const looseFlows = matchedFlows.filter((flow) => !getFolder(flow.folderId));
+  if (looseFlows.length) els.flowList.appendChild(renderLooseFlowSection(looseFlows));
 
   if (matchCount === 0) {
     const empty = document.createElement("div");
@@ -1634,6 +1779,89 @@ function renderFlowList() {
     empty.innerHTML = `<strong>Nessun flusso trovato</strong><span>Prova con un nome, un trigger, un tool o una frase del prompt.</span>`;
     els.flowList.appendChild(empty);
   }
+  renderFlowManagerActions();
+}
+
+function renderFolderTree(folder, matchedIds, visibleFlows, query, depth) {
+  const children = getFolderChildren(folder.id)
+    .map((child) => renderFolderTree(child, matchedIds, visibleFlows, query, depth + 1))
+    .filter(Boolean);
+  const directFlows = visibleFlows.filter((flow) => flow.folderId === folder.id && matchedIds.has(flow.id));
+  if (query && directFlows.length === 0 && children.length === 0) return null;
+
+  const totalCount = countFlowsInFolder(folder.id, visibleFlows);
+  const matchedCount = countFlowsInFolder(folder.id, visibleFlows.filter((flow) => matchedIds.has(flow.id)));
+  const isOpen = Boolean(query) || !state.closedFolderIds.has(folder.id);
+  const isSelected = state.selectedFolderId === folder.id;
+  const section = document.createElement("section");
+  section.className = `flow-group flow-folder ${isOpen ? "is-open" : ""} ${isSelected ? "is-selected" : ""}`;
+  section.style.setProperty("--folder-depth", depth);
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "flow-group-toggle";
+  toggle.setAttribute("aria-expanded", String(isOpen));
+  toggle.setAttribute("aria-controls", `flow-folder-${folder.id}`);
+  toggle.innerHTML = `
+    <span class="flow-group-copy">
+      <span class="folder-title-line"><svg><use href="#icon-folder"></use></svg><strong>${escapeHtml(folder.name)}</strong></span>
+      <small>${escapeHtml(folder.description || getFolderPath(folder.id).join(" / ") || "Cartella flussi")}</small>
+    </span>
+    <span class="flow-group-actions">
+      ${folder.system ? `<span class="folder-system-pill">base</span>` : ""}
+      <span class="flow-group-count">${query ? `${matchedCount}/${totalCount}` : totalCount}</span>
+      <span class="flow-group-chevron" aria-hidden="true"></span>
+    </span>
+  `;
+  toggle.addEventListener("click", () => toggleFlowFolder(folder.id));
+  section.appendChild(toggle);
+
+  const items = document.createElement("div");
+  items.className = "flow-group-items";
+  items.id = `flow-folder-${folder.id}`;
+  items.hidden = !isOpen;
+  directFlows.forEach((flow) => items.appendChild(renderFlowCard(flow)));
+  children.forEach((child) => items.appendChild(child));
+  section.appendChild(items);
+  return section;
+}
+
+function renderFlowCard(flow) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `flow-card ${flow.id === state.currentFlowId ? "active" : ""}`;
+  button.innerHTML = `
+    <div class="flow-card-header">
+      <strong>${escapeHtml(flow.name)}</strong>
+      <span class="flow-level ${flow.level === "Avanzato" ? "is-advanced" : ""}">${escapeHtml(flow.level || "Core")}</span>
+    </div>
+    <span class="flow-chip">${escapeHtml(flow.category || "Da classificare")}</span>
+    <p>${escapeHtml(flow.summary || "Flusso da configurare.")}</p>
+  `;
+  button.addEventListener("click", () => selectFlow(flow.id));
+  return button;
+}
+
+function renderLooseFlowSection(looseFlows) {
+  const section = document.createElement("section");
+  section.className = "flow-group flow-folder is-open";
+  section.innerHTML = `
+    <div class="flow-group-toggle static">
+      <span class="flow-group-copy"><strong>Senza cartella</strong><small>Flussi da riorganizzare</small></span>
+      <span class="flow-group-count">${looseFlows.length}</span>
+    </div>
+  `;
+  const items = document.createElement("div");
+  items.className = "flow-group-items";
+  looseFlows.forEach((flow) => items.appendChild(renderFlowCard(flow)));
+  section.appendChild(items);
+  return section;
+}
+
+function countFlowsInFolder(folderId, flowCollection = getVisibleFlows()) {
+  const ids = getFolderDescendantIds(folderId);
+  ids.add(folderId);
+  return flowCollection.filter((flow) => ids.has(flow.folderId)).length;
 }
 
 function flowMatchesSearch(flow, query) {
@@ -1665,6 +1893,367 @@ function toggleFlowGroup(groupId) {
     state.closedGroups.add(groupId);
   }
   renderFlowList();
+}
+
+function toggleFlowFolder(folderId) {
+  state.selectedFolderId = folderId;
+  if (state.closedFolderIds.has(folderId)) {
+    state.closedFolderIds.delete(folderId);
+  } else {
+    state.closedFolderIds.add(folderId);
+  }
+  renderFlowList();
+}
+
+function renderFlowManagerActions() {
+  const hasFlow = Boolean(getCurrentFlow());
+  const selectedFolder = getFolder(state.selectedFolderId);
+  if (els.folderContext) {
+    els.folderContext.textContent = selectedFolder ? getFolderPath(selectedFolder.id).join(" / ") : "Nessuna cartella selezionata";
+  }
+  if (els.newFlowButton) els.newFlowButton.disabled = false;
+  if (els.duplicateFlowButton) els.duplicateFlowButton.disabled = !hasFlow;
+  if (els.editFlowButton) els.editFlowButton.disabled = !hasFlow;
+  if (els.deleteFlowButton) els.deleteFlowButton.disabled = !hasFlow;
+  if (els.newSubfolderButton) els.newSubfolderButton.disabled = !selectedFolder;
+  if (els.editFolderButton) els.editFolderButton.disabled = !selectedFolder || selectedFolder.system;
+  if (els.deleteFolderButton) els.deleteFolderButton.disabled = !selectedFolder || selectedFolder.system;
+}
+
+function openFlowCrudDialog(mode) {
+  state.flowDialogMode = mode;
+  const flow = mode === "edit" ? getCurrentFlow() : null;
+  if (mode === "edit" && !flow) return;
+  ensureFlowOrganization();
+  if (els.flowCrudTitle) els.flowCrudTitle.textContent = mode === "edit" ? "Modifica flusso" : "Nuovo flusso da zero";
+  renderFolderSelectOptions(els.flowCrudFolder, flow?.folderId || state.selectedFolderId || getDefaultFolderIdForGroup(flow?.group || getBusinessGroups()[0]?.id));
+  els.flowCrudName.value = flow?.name || "";
+  els.flowCrudCategory.value = flow?.category || "";
+  els.flowCrudTrigger.value = flow?.trigger || "";
+  els.flowCrudLevel.value = flow?.level || "Core";
+  els.flowCrudSummary.value = flow?.summary || "";
+  openCrudDialog(els.flowCrudDialog);
+  els.flowCrudName.focus();
+}
+
+function submitFlowCrudForm(event) {
+  event.preventDefault();
+  const name = els.flowCrudName.value.trim();
+  if (!name) return showToast("Inserisci un nome per il flusso.");
+  const data = {
+    name,
+    folderId: els.flowCrudFolder.value || null,
+    category: els.flowCrudCategory.value.trim() || "Da classificare",
+    trigger: els.flowCrudTrigger.value.trim() || "manual.start",
+    level: els.flowCrudLevel.value || "Core",
+    summary: els.flowCrudSummary.value.trim() || "Flusso creato da zero, da completare con nodi e policy operative.",
+  };
+  if (state.flowDialogMode === "edit") updateCurrentFlowMetadata(data);
+  else createFlowFromScratch(data);
+  closeCrudDialog(els.flowCrudDialog);
+}
+
+function createFlowFromScratch(data) {
+  stopSimulation(false);
+  const groupId = getGroupIdForFolder(data.folderId) || getBusinessGroups()[0]?.id || "custom";
+  const flowId = uniqueFlowId(data.name);
+  const triggerId = `${flowId}-trigger`;
+  const agentId = `${flowId}-agent`;
+  const toolId = `${flowId}-tool`;
+  const taskId = `${flowId}-imanager-task`;
+  const outcomeId = `${flowId}-outcome`;
+  const businessGoal = `completare manualmente o automaticamente: ${data.summary}`;
+  const taskDefinition = {
+    title: `Completare manualmente: ${data.name}`,
+    objective: businessGoal,
+    tasklist: "iManager",
+    priority: "media",
+    requiredContext: ["booking_id", "guest_contact", "unit_id", "errore_o_motivo_escalation"],
+    instructions: [
+      "Raggiungere manualmente lo stesso obiettivo operativo del flusso.",
+      "Usare solo i dati minimi presenti nel task.",
+      "Registrare esito ed evidenza nella timeline operativa.",
+    ],
+    privacy: "Non includere dati personali o log tecnici non necessari al completamento del task.",
+  };
+  const agentTools = [
+    {
+      function: "ops.runTool",
+      label: "Tool operativo da configurare",
+      purpose: "Esegue l'azione principale del flusso quando policy e dati sono validi.",
+      critical: true,
+      failureRoute: taskId,
+      params: { booking_id: "{{booking.id}}", dry_run: false },
+    },
+    {
+      function: "imanager.createTask",
+      label: "Crea task iManager",
+      purpose: "Apre un task manuale per ogni fallback, escalation o failure definitiva.",
+      critical: true,
+      params: taskDefinition,
+    },
+  ];
+  const flow = {
+    id: flowId,
+    businessId: state.activeBusinessId,
+    group: groupId,
+    folderId: data.folderId,
+    name: data.name,
+    category: data.category,
+    summary: data.summary,
+    trigger: data.trigger,
+    level: data.level,
+    agentModelVersion: 2,
+    agentMode: "single_responsible_agent",
+    businessGoal,
+    metrics: { sla: "Da definire", risk: "Da valutare", agenti: "1 agente", automations: `${agentTools.length} tool` },
+    simulationOrder: [triggerId, agentId, toolId, taskId, outcomeId],
+    edges: [
+      { from: triggerId, to: agentId, outcome: "evento_validato" },
+      { from: agentId, to: toolId, outcome: "azione_tool" },
+      { from: agentId, to: taskId, outcome: "fallback_o_escalation" },
+      { from: toolId, to: outcomeId, outcome: "tool_ok" },
+      { from: taskId, to: outcomeId, outcome: "completato_manualmente" },
+    ],
+    nodes: [
+      {
+        id: triggerId,
+        type: "trigger",
+        x: 42,
+        y: 240,
+        name: "Trigger iniziale",
+        description: "Definisci l'evento che avvia il flusso.",
+        condition: data.trigger,
+        params: { event: data.trigger, source: "manuale" },
+        guardrail: "Non prosegue se il payload minimo non è stato definito.",
+      },
+      {
+        id: agentId,
+        type: "agent",
+        x: 330,
+        y: 190,
+        name: "Agente operativo",
+        description: "Responsabile unico del flusso: interpreta il trigger, usa i tool disponibili e apre task iManager quando serve intervento umano.",
+        condition: "Dati minimi disponibili",
+        businessGoal,
+        capability: "manage_flow_with_tools_and_imanager_fallback",
+        prompt: defaultAgentPrompt(),
+        tools: agentTools,
+        taskTemplates: [taskDefinition],
+        policy: {
+          checks: ["dati_minimi", "policy", "autorizzazione", "success_contract"],
+          escalationRule: "Ogni fallback o escalation crea sempre un task iManager.",
+          taskDataRule: "Il task contiene solo informazioni necessarie al completamento manuale dell'obiettivo.",
+        },
+        params: {
+          available_tools: agentTools.map((tool) => tool.function),
+          imanager_task_policy: taskDefinition,
+        },
+        fallbackPlaybook: [
+          "Creare task iManager quando il tool principale fallisce definitivamente.",
+          "Creare task iManager quando serve autorizzazione o verifica manuale.",
+          "Creare task iManager quando mancano dati indispensabili al success contract.",
+        ],
+        guardrail: "Ogni fallback operativo apre un task iManager con obiettivo, dati minimi, evidenza richiesta e scadenza.",
+      },
+      {
+        id: toolId,
+        type: "tool",
+        x: 620,
+        y: 112,
+        name: "Tool operativo",
+        description: "Intervento dell'agente: collega qui la funzione principale del flusso.",
+        condition: "agent.policy == 'pass'",
+        tool: "ops.runTool",
+        agentIntervention: true,
+        agentId,
+        agentLabel: "Agente operativo",
+        params: { booking_id: "{{booking.id}}", dry_run: false },
+        guardrail: "Timeout o failure definitiva aprono un task iManager.",
+      },
+      {
+        id: taskId,
+        type: "human_task",
+        x: 620,
+        y: 360,
+        name: "Task iManager fallback",
+        description: "Intervento dell'agente: task manuale con solo l'obiettivo da raggiungere e il contesto minimo.",
+        condition: "fallback || escalation || tool.failure || policy.needs_human",
+        businessGoal,
+        capability: "create_minimal_human_task",
+        tool: "imanager.createTask",
+        agentIntervention: true,
+        agentId,
+        agentLabel: "Agente operativo",
+        taskDefinition,
+        params: taskDefinition,
+        guardrail: "Non inserire nel task log tecnici completi o dati personali non necessari.",
+        outcomes: { completed_manually: outcomeId },
+      },
+      {
+        id: outcomeId,
+        type: "outcome",
+        x: 910,
+        y: 240,
+        name: "Outcome verificato",
+        description: "Stato terminale esplicito da validare con success contract.",
+        condition: "tool.status == 'succeeded' || task.status == 'completed'",
+        businessGoal,
+        params: { status: "completed" },
+        guardrail: "Registra audit e non ripete side effect già completate.",
+      },
+    ],
+  };
+  flows.unshift(flow);
+  state.deletedFlowIds.delete(flow.id);
+  state.currentFlowId = flow.id;
+  state.selectedNodeId = agentId;
+  state.selectedFolderId = data.folderId;
+  if (data.folderId) state.closedFolderIds.delete(data.folderId);
+  persistState();
+  showToast("Flusso creato con un agente responsabile, tool e task iManager di fallback.");
+  renderAll();
+}
+
+function updateCurrentFlowMetadata(data) {
+  const flow = getCurrentFlow();
+  if (!flow) return;
+  stopSimulation(false);
+  flow.name = data.name;
+  flow.folderId = data.folderId;
+  flow.group = getGroupIdForFolder(data.folderId) || flow.group || getBusinessGroups()[0]?.id;
+  flow.category = data.category;
+  flow.trigger = data.trigger;
+  flow.level = data.level;
+  flow.summary = data.summary;
+  state.selectedFolderId = data.folderId;
+  if (data.folderId) state.closedFolderIds.delete(data.folderId);
+  persistState();
+  showToast("Metadati del flusso aggiornati.");
+  renderAll();
+}
+
+function deleteCurrentFlow() {
+  const flow = getCurrentFlow();
+  if (!flow) return;
+  if (!window.confirm(`Eliminare il flusso "${flow.name}"? L'azione rimuove il playbook dall'archivio locale.`)) return;
+  stopSimulation(false);
+  const index = flows.findIndex((item) => item.id === flow.id);
+  if (index >= 0) flows.splice(index, 1);
+  state.deletedFlowIds.add(flow.id);
+  const next = getVisibleFlows()[Math.max(0, Math.min(index, getVisibleFlows().length - 1))] || null;
+  state.currentFlowId = next?.id || null;
+  state.selectedNodeId = next?.nodes[0]?.id || null;
+  if (next?.folderId) state.selectedFolderId = next.folderId;
+  persistState();
+  showToast("Flusso eliminato.");
+  renderAll();
+}
+
+function openFolderCrudDialog(mode) {
+  state.folderDialogMode = mode;
+  const selectedFolder = getFolder(state.selectedFolderId);
+  if (mode === "edit" && (!selectedFolder || selectedFolder.system)) return;
+  const isEdit = mode === "edit";
+  const defaultParent = mode === "create-child" ? selectedFolder?.id : null;
+  state.editingFolderId = isEdit ? selectedFolder.id : null;
+  if (els.folderCrudTitle) els.folderCrudTitle.textContent = isEdit ? "Modifica cartella" : mode === "create-child" ? "Nuova sottocartella" : "Nuova cartella";
+  renderFolderSelectOptions(els.folderCrudParent, isEdit ? selectedFolder.parentId : defaultParent, {
+    includeRoot: true,
+    excludeFolderId: isEdit ? selectedFolder.id : null,
+  });
+  els.folderCrudName.value = isEdit ? selectedFolder.name : "";
+  openCrudDialog(els.folderCrudDialog);
+  els.folderCrudName.focus();
+}
+
+function submitFolderCrudForm(event) {
+  event.preventDefault();
+  const name = els.folderCrudName.value.trim();
+  if (!name) return showToast("Inserisci un nome per la cartella.");
+  const parentId = els.folderCrudParent.value || null;
+  if (state.folderDialogMode === "edit") updateSelectedFolder(name, parentId);
+  else createFlowFolder(name, parentId);
+  closeCrudDialog(els.folderCrudDialog);
+}
+
+function createFlowFolder(name, parentId) {
+  const folder = {
+    id: uniqueFolderId(name),
+    name,
+    description: parentId ? "Sottocartella personalizzata" : "Cartella personalizzata",
+    parentId,
+    groupId: getGroupIdForFolder(parentId),
+    businessId: state.activeBusinessId,
+    system: false,
+    sort: Date.now(),
+  };
+  state.flowFolders.push(folder);
+  state.selectedFolderId = folder.id;
+  state.closedFolderIds.delete(parentId);
+  persistState();
+  showToast(parentId ? "Sottocartella creata." : "Cartella creata.");
+  renderFlowList();
+}
+
+function updateSelectedFolder(name, parentId) {
+  const folder = getFolder(state.editingFolderId);
+  if (!folder || folder.system) return;
+  if (parentId && getFolderDescendantIds(folder.id).has(parentId)) return showToast("Non puoi spostare una cartella dentro una sua sottocartella.");
+  folder.name = name;
+  folder.parentId = parentId;
+  folder.groupId = getGroupIdForFolder(parentId);
+  state.selectedFolderId = folder.id;
+  persistState();
+  showToast("Cartella aggiornata.");
+  renderFlowList();
+}
+
+function deleteSelectedFolder() {
+  const folder = getFolder(state.selectedFolderId);
+  if (!folder || folder.system) return;
+  const descendantIds = getFolderDescendantIds(folder.id);
+  const folderIdsToDelete = new Set([folder.id, ...descendantIds]);
+  const flowCount = getVisibleFlows().filter((flow) => folderIdsToDelete.has(flow.folderId)).length;
+  const childCount = descendantIds.size;
+  if (!window.confirm(`Eliminare "${folder.name}"${childCount ? ` e ${childCount} sottocartelle` : ""}? ${flowCount} flussi verranno spostati nella cartella superiore.`)) return;
+  flows.forEach((flow) => {
+    if (folderIdsToDelete.has(flow.folderId)) flow.folderId = folder.parentId || getDefaultFolderIdForGroup(flow.group);
+  });
+  state.flowFolders = state.flowFolders.filter((item) => !folderIdsToDelete.has(item.id));
+  state.selectedFolderId = folder.parentId || null;
+  persistState();
+  showToast("Cartella eliminata e flussi riorganizzati.");
+  renderFlowList();
+}
+
+function renderFolderSelectOptions(select, selectedId, options = {}) {
+  if (!select) return;
+  const { includeRoot = false, excludeFolderId = null } = options;
+  const excluded = excludeFolderId ? new Set([excludeFolderId, ...getFolderDescendantIds(excludeFolderId)]) : new Set();
+  const rows = [];
+  if (includeRoot) rows.push({ id: "", label: "Livello principale" });
+  const visit = (parentId, depth) => {
+    getFolderChildren(parentId).forEach((folder) => {
+      if (excluded.has(folder.id)) return;
+      rows.push({ id: folder.id, label: `${"— ".repeat(depth)}${folder.name}${folder.system ? " · base" : ""}` });
+      visit(folder.id, depth + 1);
+    });
+  };
+  visit(null, 0);
+  select.innerHTML = rows.map((row) => `<option value="${escapeHtml(row.id)}" ${row.id === (selectedId || "") ? "selected" : ""}>${escapeHtml(row.label)}</option>`).join("");
+}
+
+function openCrudDialog(dialog) {
+  if (!dialog) return;
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+}
+
+function closeCrudDialog(dialog) {
+  if (!dialog) return;
+  if (typeof dialog.close === "function") dialog.close();
+  else dialog.removeAttribute("open");
 }
 
 function renderPalette() {
@@ -1760,6 +2349,7 @@ function renderCanvas() {
       <div class="node-body">
         <h3>${escapeHtml(node.name)}</h3>
         <p>${escapeHtml(node.description)}</p>
+        ${node.agentIntervention ? `<span class="agent-intervention-pill">${escapeHtml(node.agentLabel || "Intervento agente")}</span>` : ""}
       </div>
       <footer class="node-footer">
         <span class="node-pill">${escapeHtml(node.capability || node.tool || node.condition || "configurabile")}</span>
@@ -1846,6 +2436,8 @@ function renderInspector() {
   els.nodeOutcomesInput.value = JSON.stringify(node.outcomes || {}, null, 2);
   els.nodeFallbackInput.value = (node.fallbackPlaybook || []).join("\n");
   renderInspectorCompleteness(node);
+  renderAgentToolsPreview(node);
+  renderAgentTaskPolicyPreview(node);
 
   const isAgent = node.type === "agent";
   const hasTool = Boolean(node.tool) || node.type === "tool" || node.type === "message";
@@ -1878,10 +2470,14 @@ function renderEditorAvailability() {
   const hasFlow = Boolean(getCurrentFlow());
   els.saveButton.disabled = !hasFlow;
   els.simulateButton.disabled = !hasFlow;
-  els.newFlowButton.disabled = !hasFlow;
+  if (els.newFlowButton) els.newFlowButton.disabled = false;
+  if (els.duplicateFlowButton) els.duplicateFlowButton.disabled = !hasFlow;
+  if (els.editFlowButton) els.editFlowButton.disabled = !hasFlow;
+  if (els.deleteFlowButton) els.deleteFlowButton.disabled = !hasFlow;
   els.paletteGrid.querySelectorAll("button").forEach((button) => {
     button.disabled = !hasFlow;
   });
+  renderFlowManagerActions();
 }
 
 function setSidebarTab(tabId) {
@@ -1945,6 +2541,10 @@ function selectFlow(flowId) {
   if (!flow) return;
   state.currentFlowId = flowId;
   state.closedGroups.delete(flow.group);
+  if (flow.folderId) {
+    state.selectedFolderId = flow.folderId;
+    state.closedFolderIds.delete(flow.folderId);
+  }
   state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
   state.nodeStatuses = {};
   state.activeEdges = new Set();
@@ -2004,14 +2604,17 @@ function duplicateCurrentFlow() {
   const flow = getCurrentFlow();
   if (!flow) return;
   const clone = structuredClone(flow);
-  clone.id = `${flow.id}-copy-${Date.now()}`;
+  clone.id = uniqueFlowId(`${flow.name} copia`);
   clone.name = `${flow.name} - copia`;
   clone.summary = "Copia modificabile del playbook selezionato.";
   clone.businessId = state.activeBusinessId;
+  clone.folderId = flow.folderId || getDefaultFolderIdForGroup(flow.group);
   flows.unshift(clone);
   state.currentFlowId = clone.id;
-  state.closedGroups.delete(clone.group);
+  state.selectedFolderId = clone.folderId;
+  if (clone.folderId) state.closedFolderIds.delete(clone.folderId);
   state.selectedNodeId = clone.nodes.find((node) => node.type === "agent")?.id || clone.nodes[0]?.id;
+  persistState();
   showToast("Flusso duplicato. Puoi modificarlo dall'inspector.");
   renderAll();
 }
@@ -2138,7 +2741,19 @@ function defaultParamsForType(type) {
 
 function defaultAgentPrompt() {
   const business = getBusinessProfile();
-  return `Sei un sotto-agente operativo per ${business.name}, ${business.type.toLowerCase()}. Definisci obiettivo, dati disponibili, passaggi decisionali, tono di comunicazione, limiti e fallback umano. Non promettere azioni non confermate dai tool e registra sempre le decisioni importanti nel gestionale.`;
+  return `Sei l'agente responsabile di un flusso operativo per ${business.name}, ${business.type.toLowerCase()}.
+
+Obiettivo: completa il macro-obiettivo del flusso usando i tool disponibili e creando task iManager quando serve intervento umano.
+
+Istruzioni:
+1. Valuta solo i dati disponibili nel trigger e nei sistemi collegati.
+2. Usa i tool configurati solo quando policy, autorizzazioni e dati minimi sono presenti.
+3. Non dichiarare mai completata un'azione finche il tool o il task iManager non restituisce evidenza verificabile.
+4. Per ogni escalation, fallback, timeout, blocco policy o dato mancante, crea sempre un task nella tasklist iManager.
+5. Ogni task iManager deve contenere solo obiettivo manuale, dati minimi necessari, scadenza, evidenze richieste e riferimento operativo.
+6. Non inserire nei task log tecnici completi, dati personali non necessari o dettagli che non aiutano l'operatore a completare il lavoro.
+
+Tono: professionale, concreto, calmo e orientato all'operativita.`;
 }
 
 function clamp(value, min, max) {
@@ -2172,15 +2787,75 @@ function bindJsonEditor(element, field) {
 function renderInspectorCompleteness(node) {
   const outcomes = Object.keys(node.outcomes || {});
   const handledFailure = outcomes.some((item) => ["failed", "timed_out", "policy_blocked", "completed_manually", "completed_with_workaround", "completed_with_alternate_provider"].includes(item));
-  const complete = Boolean(node.businessGoal || getCurrentFlow()?.businessGoal) && (node.type !== "tool" || handledFailure || node.fallbackTaskKey);
+  const hasHumanFallback = Boolean(node.fallbackTaskKey || node.taskDefinition || node.taskTemplates?.length);
+  const complete = Boolean(node.businessGoal || getCurrentFlow()?.businessGoal) && (node.type !== "tool" || handledFailure || hasHumanFallback || node.agentIntervention);
   els.nodeCompleteness.className = `completeness-box ${complete ? "is-complete" : "has-warning"}`;
   els.nodeCompleteness.innerHTML = complete
-    ? `<strong>Contratto configurato</strong><span>${outcomes.length} outcome instradati · ${node.fallbackPlaybook?.length || 0} fallback</span>`
+    ? `<strong>Contratto configurato</strong><span>${outcomes.length} outcome instradati · ${node.fallbackPlaybook?.length || 0} fallback · ${node.tools?.length || 0} tool agente</span>`
     : `<strong>Ramo critico incompleto</strong><span>Aggiungi outcome di errore o un fallback sul business goal.</span>`;
   const task = node.fallbackTaskKey ? window.BNBFLOW_TASKS.taskCatalog[node.fallbackTaskKey] : null;
+  const taskDefinition = node.taskDefinition || node.taskTemplates?.[0] || null;
   els.taskPreview.innerHTML = task
     ? `<p class="eyebrow">Anteprima task generato</p><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.businessGoal)}</span><p>${escapeHtml(task.proposal)}</p>`
-    : `<p class="eyebrow">Anteprima task</p><span>Nessun task operativo collegato a questo nodo.</span>`;
+    : taskDefinition
+      ? `<p class="eyebrow">Task iManager generato</p><strong>${escapeHtml(taskDefinition.title)}</strong><span>${escapeHtml(taskDefinition.objective)}</span><p>${escapeHtml(taskDefinition.privacy || "Contesto limitato ai dati necessari al completamento.")}</p>`
+      : `<p class="eyebrow">Anteprima task</p><span>Nessun task operativo collegato a questo nodo.</span>`;
+}
+
+function renderAgentToolsPreview(node) {
+  if (!els.agentToolsPreview) return;
+  const tools = Array.isArray(node.tools) ? node.tools : [];
+  if (node.type === "agent" && tools.length) {
+    els.agentToolsPreview.hidden = false;
+    els.agentToolsPreview.innerHTML = `
+      <p class="eyebrow">Tool disponibili all'agente</p>
+      ${tools.map((tool) => `
+        <article>
+          <strong>${escapeHtml(tool.label || tool.function)}</strong>
+          <code>${escapeHtml(tool.function)}</code>
+          <span>${escapeHtml(tool.purpose || "Tool operativo configurato per questo agente.")}</span>
+          ${tool.failureRoute ? `<small>Failure route: ${escapeHtml(tool.failureRoute)}</small>` : ""}
+        </article>`).join("")}
+    `;
+    return;
+  }
+  if (node.agentIntervention) {
+    els.agentToolsPreview.hidden = false;
+    els.agentToolsPreview.innerHTML = `
+      <p class="eyebrow">Intervento agente</p>
+      <article>
+        <strong>${escapeHtml(node.agentLabel || "Agente responsabile")}</strong>
+        <span>Questo nodo mostra dove l'agente interviene con un tool, una comunicazione o un task iManager.</span>
+      </article>
+    `;
+    return;
+  }
+  els.agentToolsPreview.hidden = true;
+  els.agentToolsPreview.innerHTML = "";
+}
+
+function renderAgentTaskPolicyPreview(node) {
+  if (!els.agentTaskPolicyPreview) return;
+  const taskDefinitions = node.type === "agent" && Array.isArray(node.taskTemplates)
+    ? node.taskTemplates
+    : node.taskDefinition
+      ? [node.taskDefinition]
+      : [];
+  if (!taskDefinitions.length) {
+    els.agentTaskPolicyPreview.hidden = true;
+    els.agentTaskPolicyPreview.innerHTML = "";
+    return;
+  }
+  els.agentTaskPolicyPreview.hidden = false;
+  els.agentTaskPolicyPreview.innerHTML = `
+    <p class="eyebrow">Tasklist iManager</p>
+    ${taskDefinitions.map((task) => `
+      <article>
+        <strong>${escapeHtml(task.title)}</strong>
+        <span>${escapeHtml(task.objective)}</span>
+        <small>Dati minimi: ${(task.requiredContext || []).map(escapeHtml).join(" · ")}</small>
+      </article>`).join("")}
+  `;
 }
 
 function setActiveView(view) {
@@ -2228,7 +2903,7 @@ function startSelectedScenario() {
   const scenario = runtimeScenarios.find((item) => item.id === state.selectedScenarioId);
   if (!flow || !scenario) return;
   state.activeBusinessId = defaultBusinessId;
-  renderBusinessSelector();
+  renderCompanyTitle();
   runtimeEngine.start(flow, scenario);
   state.selectedTaskId = null;
   state.selectedFallbackId = null;
@@ -2319,9 +2994,11 @@ function renderRuntimeSurfaces() {
   const openTasks = run?.tasks.filter((task) => ["open", "assigned", "in_progress"].includes(task.status)) || [];
   const openIssues = run?.technicalIssues.filter((issue) => issue.status === "open") || [];
   const demoOpenTasks = caseData.tasks.filter((task) => task.status !== "done");
-  els.operationsBadge.textContent = openTasks.length + demoOpenTasks.length;
+  if (els.operationsBadge) {
+    els.operationsBadge.textContent = openTasks.length + demoOpenTasks.length;
+    els.operationsBadge.classList.toggle("has-items", openTasks.length + demoOpenTasks.length > 0);
+  }
   els.technicalBadge.textContent = openIssues.length;
-  els.operationsBadge.classList.toggle("has-items", openTasks.length + demoOpenTasks.length > 0);
   els.technicalBadge.classList.toggle("has-items", openIssues.length > 0);
   renderCockpit();
   renderRunInspector();
@@ -2378,32 +3055,61 @@ function renderRunInspector() {
 }
 
 function renderOperationsInbox() {
-  const tasks = state.runtimeRun?.tasks || [];
-  const openTasks = tasks.filter((task) => ["open", "assigned", "in_progress"].includes(task.status));
+  if (!els.operationsList || !els.operationsDetail || !els.operationsStat) return;
+  const runtimeTasks = state.runtimeRun?.tasks || [];
+  const openRuntimeTasks = runtimeTasks.filter((task) => ["open", "assigned", "in_progress"].includes(task.status));
   const demoOpenTasks = caseData.tasks.filter((task) => task.status !== "done");
-  const totalOpen = openTasks.length + demoOpenTasks.length;
+  const totalOpen = openRuntimeTasks.length + demoOpenTasks.length;
   els.operationsStat.textContent = `${totalOpen} task ${totalOpen === 1 ? "aperto" : "aperti"}`;
-  const runtimeHtml = openTasks.map((task) => `<button class="inbox-item ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}"><span class="priority priority-${task.priority}">${escapeHtml(task.priority)}</span><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.businessGoal)}</span><small>SLA ${formatTime(task.slaAt)} · ${escapeHtml(task.assignee || "Non assegnato")}</small></button>`).join("");
-  const demoHtml = demoOpenTasks.map((task) => `<button class="inbox-item ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}"><span class="priority priority-${task.priority}">${escapeHtml(task.priority)}</span><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.type)} · ${escapeHtml(task.unit)}</span><small>Entro ${escapeHtml(task.due)} · ${escapeHtml(task.owner)}</small></button>`).join("");
-  els.operationsList.innerHTML = totalOpen ? `${runtimeHtml}${demoHtml}` : `<div class="empty-panel">Nessun task operativo aperto.</div>`;
-  const selected = tasks.find((task) => task.id === state.selectedTaskId);
-  const selectedDemoTask = caseData.tasks.find((task) => task.id === state.selectedTaskId);
-  if (!state.selectedTaskId) state.selectedTaskId = openTasks[0]?.id || demoOpenTasks[0]?.id || null;
-  if (selected || openTasks.some((task) => task.id === state.selectedTaskId)) {
-    renderTaskDetail(selected || openTasks.find((task) => task.id === state.selectedTaskId));
-  } else {
-    renderDemoTaskDetail(selectedDemoTask || demoOpenTasks.find((task) => task.id === state.selectedTaskId));
+  if (!totalOpen) {
+    state.selectedTaskId = null;
+    state.selectedFallbackId = null;
+    els.operationsList.innerHTML = `<div class="empty-panel">Nessun task operativo aperto.</div>`;
+    renderTaskDetail(null, els.operationsDetail);
+    return;
   }
+
+  const selectedStillOpen = openRuntimeTasks.some((task) => task.id === state.selectedTaskId)
+    || demoOpenTasks.some((task) => task.id === state.selectedTaskId);
+  if (!selectedStillOpen) {
+    state.selectedTaskId = openRuntimeTasks[0]?.id || demoOpenTasks[0]?.id || null;
+    state.selectedFallbackId = null;
+  }
+
+  const runtimeHtml = openRuntimeTasks.map((task) => `
+    <button class="inbox-item ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}">
+      <span class="priority priority-${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span>
+      <strong>${escapeHtml(task.title)}</strong>
+      <span>${escapeHtml(task.businessGoal)}</span>
+      <small>SLA ${formatTime(task.slaAt)} · ${escapeHtml(task.assignee || "Non assegnato")}</small>
+    </button>`).join("");
+  const demoHtml = demoOpenTasks.map((task) => `
+    <button class="inbox-item ${task.id === state.selectedTaskId ? "active" : ""}" type="button" data-task-id="${escapeHtml(task.id)}">
+      <span class="priority priority-${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span>
+      <strong>${escapeHtml(task.title)}</strong>
+      <span>${escapeHtml(task.type)} · ${escapeHtml(task.unit)}</span>
+      <small>Entro ${escapeHtml(task.due)} · ${escapeHtml(task.owner)}</small>
+    </button>`).join("");
+  els.operationsList.innerHTML = `${runtimeHtml}${demoHtml}`;
+
+  const selectedRuntimeTask = openRuntimeTasks.find((task) => task.id === state.selectedTaskId);
+  if (selectedRuntimeTask) {
+    renderTaskDetail(selectedRuntimeTask, els.operationsDetail);
+    return;
+  }
+  const selectedDemoTask = demoOpenTasks.find((task) => task.id === state.selectedTaskId);
+  renderDemoTaskDetail(selectedDemoTask, els.operationsDetail);
 }
 
-function renderDemoTaskDetail(task) {
+function renderDemoTaskDetail(task, target = els.cockpitTaskDetail) {
+  if (!target) return;
   if (!task) {
-    els.operationsDetail.innerHTML = `<div class="empty-panel">Nessun task operativo aperto.</div>`;
+    target.innerHTML = `<div class="empty-panel">Nessun task operativo aperto.</div>`;
     return;
   }
   const caseItem = caseData.cases.find((item) => item.id === task.caseId);
   const property = caseData.properties.find((item) => item.id === task.propertyId);
-  els.operationsDetail.innerHTML = `
+  target.innerHTML = `
     <div class="task-detail-header"><div><p class="eyebrow">Task operativo simulato</p><h3>${escapeHtml(task.title)}</h3><code>${escapeHtml(task.type)}</code></div><span class="priority priority-${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span></div>
     <div class="task-context"><div><span>Struttura</span><strong>${escapeHtml(property?.name || task.unit)}</strong></div><div><span>Scadenza</span><strong>${escapeHtml(task.due)}</strong></div><div><span>Owner</span><strong>${escapeHtml(task.owner)}</strong></div></div>
     <div class="task-booking-detail">
@@ -2415,29 +3121,30 @@ function renderDemoTaskDetail(task) {
     </div>
     <div class="agent-proposal"><span>Raccomandazione AI</span><p>${escapeHtml(task.recommendation)}</p></div>
     <div class="case-linked-box"><span>Contesto prenotazione</span><p>${escapeHtml(task.guest)} · ${escapeHtml(task.bookingId)} · ${escapeHtml(task.unit)}</p>${caseItem ? `<button class="secondary-action" type="button" data-open-case="${escapeHtml(caseItem.id)}">Apri case nel Cockpit</button>` : ""}</div>`;
-  els.operationsDetail.querySelector("[data-open-case]")?.addEventListener("click", (event) => {
+  target.querySelector("[data-open-case]")?.addEventListener("click", (event) => {
     state.selectedCaseId = event.currentTarget.dataset.openCase;
     setActiveView("cockpit");
     renderCockpit();
   });
 }
 
-function renderTaskDetail(task) {
+function renderTaskDetail(task, target = els.cockpitTaskDetail) {
+  if (!target) return;
   if (!task) {
-    els.operationsDetail.innerHTML = `<div class="empty-panel">Avvia uno scenario con fallback umano per popolare la inbox.</div>`;
+    target.innerHTML = `<div class="empty-panel">Avvia uno scenario con fallback umano per popolare la checklist.</div>`;
     return;
   }
   if (task.status === "resolved") {
-    els.operationsDetail.innerHTML = `<div class="resolution-complete"><span>Task risolto</span><h3>${escapeHtml(task.title)}</h3><p>Il flow è ripartito con <code>${escapeHtml(task.resolution.type)}</code>.</p></div>`;
+    target.innerHTML = `<div class="resolution-complete"><span>Task risolto</span><h3>${escapeHtml(task.title)}</h3><p>Il flow è ripartito con <code>${escapeHtml(task.resolution.type)}</code>.</p></div>`;
     return;
   }
   const selectedFallback = task.fallbacks.find((fallback) => fallback.id === state.selectedFallbackId) || task.fallbacks[0];
   state.selectedFallbackId = selectedFallback?.id || null;
   const defaults = selectedFallback?.defaults || {};
-  els.operationsDetail.innerHTML = `
+  target.innerHTML = `
     <div class="task-detail-header"><div><p class="eyebrow">Macro-obiettivo</p><h3>${escapeHtml(task.title)}</h3><code>${escapeHtml(task.businessGoal)}</code></div><span class="priority priority-${task.priority}">${escapeHtml(task.priority)}</span></div>
     <div class="task-context"><div><span>Run</span><strong>${escapeHtml(task.runId)}</strong></div><div><span>SLA</span><strong>${formatTime(task.slaAt)}</strong></div><div><span>Owner</span><strong>${escapeHtml(task.assignee || "Da prendere")}</strong></div></div>
-    ${task.technicalContext ? `<div class="technical-context"><span>Contesto secondario</span><code>${escapeHtml(task.technicalContext.tool)} · ${escapeHtml(task.technicalContext.errorCode)} · ${task.technicalContext.attempts} tentativi</code></div>` : ""}
+    ${task.escalationReason ? `<div class="technical-context"><span>Motivo operativo</span><p>${escapeHtml(task.escalationReason)}</p></div>` : ""}
     <div class="agent-proposal"><span>Proposta agente</span><p>${escapeHtml(task.proposal)}</p></div>
     <div class="fallback-options"><span>Strategia di risoluzione</span><div>${task.fallbacks.map((fallback) => `<button type="button" class="fallback-option ${fallback.id === selectedFallback?.id ? "active" : ""}" data-fallback-id="${escapeHtml(fallback.id)}">${escapeHtml(fallback.label)}</button>`).join("")}</div></div>
     <form id="taskResolutionForm" class="resolution-form">
@@ -2446,13 +3153,14 @@ function renderTaskDetail(task) {
       <div class="resolution-impact"><strong>Impatto sul flow</strong><span>Completa lo step in attesa e riprende dal nodo successivo. Nessuna azione gia riuscita viene ripetuta.</span></div>
       <button class="primary-action" type="submit">Conferma e riprendi flow</button>
     </form>`;
-  els.operationsDetail.querySelector("#taskResolutionForm")?.addEventListener("submit", submitTaskResolution);
+  target.querySelector("#taskResolutionForm")?.addEventListener("submit", submitTaskResolution);
 }
 
 function handleTaskDetailClick(event) {
   const fallback = event.target.closest("[data-fallback-id]");
   if (fallback) {
     state.selectedFallbackId = fallback.dataset.fallbackId;
+    renderCockpit();
     renderOperationsInbox();
   }
 }
@@ -2472,8 +3180,10 @@ function submitTaskResolution(event) {
     return;
   }
   showToast("Outcome verificato. Il flow riprende dal punto deterministico.");
-  setActiveView("simulator");
   startAutoRun();
+  setActiveView("cockpit");
+  renderCockpit();
+  renderOperationsInbox();
 }
 
 function renderTechnicalInbox() {
@@ -2528,6 +3238,12 @@ function hydrateRuntimeState() {
   const flow = pilotDefinitions[run.flowId];
   const scenario = runtimeScenarios.find((item) => item.id === run.scenarioId);
   if (!flow || !scenario) return;
+  (run.tasks || []).forEach((task) => {
+    if (task.technicalContext && !task.escalationReason) {
+      task.escalationReason = "Automazione non completata: serve raggiungere manualmente il business outcome.";
+    }
+    delete task.technicalContext;
+  });
   state.activeBusinessId = defaultBusinessId;
   state.selectedPilotFlowId = run.flowId;
   state.selectedScenarioId = run.scenarioId;
@@ -2540,25 +3256,39 @@ function hydrateRuntimeState() {
 function hydrateSavedState() {
   try {
     const saved = JSON.parse(localStorage.getItem(PERSISTENCE_KEY) || "null");
-    if (saved?.version !== 2 || !Array.isArray(saved.flows) || saved.flows.length === 0) return;
+    if (saved?.version !== 2) return;
     const catalogFlows = structuredClone(flows);
     const catalogById = new Map(catalogFlows.map((flow) => [flow.id, flow]));
+    const deletedFlowIds = new Set(Array.isArray(saved.deletedFlowIds) ? saved.deletedFlowIds : []);
     const merged = [];
     const seen = new Set();
-    saved.flows.forEach((flow) => {
+    (Array.isArray(saved.flows) ? saved.flows : []).forEach((flow) => {
+      if (!flow?.id || deletedFlowIds.has(flow.id)) return;
       const catalogFlow = catalogById.get(flow.id);
-      merged.push({ ...flow, businessId: flow.businessId || catalogFlow?.businessId || defaultBusinessId });
+      if (catalogFlow?.agentModelVersion && flow.agentModelVersion !== catalogFlow.agentModelVersion) {
+        merged.push({
+          ...structuredClone(catalogFlow),
+          businessId: flow.businessId || catalogFlow.businessId || defaultBusinessId,
+          folderId: flow.folderId || catalogFlow.folderId,
+        });
+      } else {
+        merged.push({ ...flow, businessId: flow.businessId || catalogFlow?.businessId || defaultBusinessId });
+      }
       seen.add(flow.id);
     });
     catalogFlows.forEach((flow) => {
-      if (!seen.has(flow.id)) merged.push(flow);
+      if (!seen.has(flow.id) && !deletedFlowIds.has(flow.id)) merged.push(flow);
     });
     flows.splice(0, flows.length, ...merged);
 
     state.activeBusinessId = defaultBusinessId;
-    state.currentFlowId = null;
-    state.selectedNodeId = null;
+    state.currentFlowId = flows.some((flow) => flow.id === saved.currentFlowId) ? saved.currentFlowId : null;
+    state.selectedNodeId = state.currentFlowId ? saved.selectedNodeId || null : null;
     state.closedGroups = new Set(getBusinessGroups().map((group) => group.id));
+    state.flowFolders = normalizeFlowFolders(Array.isArray(saved.flowFolders) ? saved.flowFolders : []);
+    state.closedFolderIds = new Set(Array.isArray(saved.closedFolderIds) ? saved.closedFolderIds : []);
+    state.selectedFolderId = saved.selectedFolderId || null;
+    state.deletedFlowIds = deletedFlowIds;
     state.sidebarTab = saved.sidebarTab === "tools" ? "tools" : "flows";
   } catch (error) {
     localStorage.removeItem(PERSISTENCE_KEY);
@@ -2571,13 +3301,51 @@ function persistState() {
     JSON.stringify({
       version: 2,
       flows,
+      flowFolders: state.flowFolders,
       currentFlowId: state.currentFlowId,
       selectedNodeId: state.selectedNodeId,
       closedGroups: [...state.closedGroups],
+      closedFolderIds: [...state.closedFolderIds],
+      selectedFolderId: state.selectedFolderId,
+      deletedFlowIds: [...state.deletedFlowIds],
       sidebarTab: state.sidebarTab,
       activeBusinessId: state.activeBusinessId,
     }),
   );
+}
+
+function uniqueFlowId(name) {
+  const base = slugify(name || "nuovo-flusso") || "nuovo-flusso";
+  const used = new Set(flows.map((flow) => flow.id));
+  let candidate = base;
+  let index = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+function uniqueFolderId(name) {
+  const base = `folder-${slugify(name || "cartella") || "cartella"}`;
+  const used = new Set(state.flowFolders.map((folder) => folder.id));
+  let candidate = base;
+  let index = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+function slugify(value) {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }
 
 function escapeHtml(value) {

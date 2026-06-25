@@ -335,13 +335,13 @@
         proposal: definition.proposal,
         fallbacks: structuredClone(definition.fallbacks),
         successContract: structuredClone(definition.successContract),
-        technicalContext: failure ? { tool: node.tool, errorCode: failure.errorCode, attempts: step.attempts } : null,
+        escalationReason: failure ? "Automazione non completata: serve raggiungere manualmente il business outcome." : null,
         createdAt,
         resolution: null,
       };
       this.run.tasks.push(task);
       this.transitionRun("waiting_human");
-      this.audit.emit(this.run, "task.created", { taskId: task.id, title: task.title, businessGoal: task.businessGoal, sourceNodeId: node.id, technicalContext: task.technicalContext });
+      this.audit.emit(this.run, "task.created", { taskId: task.id, title: task.title, businessGoal: task.businessGoal, sourceNodeId: node.id, escalationReason: task.escalationReason });
       return task;
     }
 

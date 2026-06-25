@@ -27,6 +27,22 @@
         <path d="M12 5v14"></path>
         <path d="M5 12h14"></path>
       </symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24">
+        <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+        <path d="M5 16H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </symbol>
+      <symbol id="icon-edit" viewBox="0 0 24 24">
+        <path d="M4 20h4l11-11-4-4L4 16z"></path>
+        <path d="m13 7 4 4"></path>
+      </symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24">
+        <path d="M4 7h16"></path>
+        <path d="M9 7V4h6v3"></path>
+        <path d="M6 7l1 13h10l1-13"></path>
+      </symbol>
+      <symbol id="icon-folder" viewBox="0 0 24 24">
+        <path d="M3 6h7l2 2h9v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+      </symbol>
       <symbol id="icon-zap" viewBox="0 0 24 24">
         <path d="M13 2 4 14h7l-1 8 9-12h-7z"></path>
       </symbol>
@@ -78,11 +94,11 @@
               <h1>xFlow</h1>
             </div>
           </div>
-          <label class="business-switcher">
-            <span id="businessType">Business</span>
-            <select id="businessSelect" aria-label="Seleziona business"></select>
-            <small id="businessDescription">Seleziona un playbook operativo.</small>
-          </label>
+          <div class="company-title" aria-label="Azienda">
+            <span id="companyType">Azienda</span>
+            <strong id="companyName">Costa dell'Ovest</strong>
+            <small id="companyDescription">Gestisce attività ricettive</small>
+          </div>
         </div>
         <div class="topbar-center">
           <nav class="app-nav" aria-label="Aree applicative">
@@ -136,7 +152,7 @@
           <section class="shift-task-panel panel">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">Task operativi</p>
+                <p class="eyebrow">Checklist operativa</p>
                 <h3>Priorita del property manager</h3>
               </div>
               <span id="cockpitTaskCount" class="view-stat">0 task</span>
@@ -148,6 +164,9 @@
               <label class="field"><span>Ordina per</span><select id="taskSortSelect"></select></label>
             </div>
             <div id="cockpitTaskList" class="cockpit-task-list"></div>
+            <div class="task-detail cockpit-task-detail" id="cockpitTaskDetail" aria-live="polite">
+              <div class="empty-panel">Seleziona un task dalla checklist per vedere contesto, raccomandazione e azioni.</div>
+            </div>
           </section>
         </div>
       </main>
@@ -184,13 +203,42 @@
           <section class="sidebar-panel flow-browser" id="sidebarFlowsPanel" role="tabpanel" aria-labelledby="sidebarFlowsTab">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Flussi pronti</p>
+                <p class="eyebrow">Flow manager</p>
                 <h2 id="flowBrowserTitle">Playbook operativo</h2>
               </div>
-              <button class="icon-button small" id="newFlowButton" type="button" aria-label="Duplica flusso" title="Duplica flusso">
-                <svg><use href="#icon-plus"></use></svg>
-              </button>
+              <div class="section-heading-actions">
+                <button class="icon-button small" id="newFlowButton" type="button" aria-label="Crea flusso da zero" title="Crea flusso da zero">
+                  <svg><use href="#icon-plus"></use></svg>
+                </button>
+                <button class="icon-button small" id="duplicateFlowButton" type="button" aria-label="Duplica flusso selezionato" title="Duplica flusso selezionato">
+                  <svg><use href="#icon-copy"></use></svg>
+                </button>
+                <button class="icon-button small" id="editFlowButton" type="button" aria-label="Modifica flusso selezionato" title="Modifica flusso selezionato">
+                  <svg><use href="#icon-edit"></use></svg>
+                </button>
+                <button class="icon-button small danger" id="deleteFlowButton" type="button" aria-label="Elimina flusso selezionato" title="Elimina flusso selezionato">
+                  <svg><use href="#icon-trash"></use></svg>
+                </button>
+              </div>
             </div>
+            <section class="flow-manager-box" aria-label="Gestione cartelle flussi">
+              <div class="flow-manager-summary">
+                <span>Cartella attiva</span>
+                <strong id="folderContext">Nessuna cartella selezionata</strong>
+              </div>
+              <div class="folder-action-grid">
+                <button class="secondary-action compact" id="newFolderButton" type="button">
+                  <svg><use href="#icon-folder"></use></svg>
+                  Cartella
+                </button>
+                <button class="secondary-action compact" id="newSubfolderButton" type="button">
+                  <svg><use href="#icon-plus"></use></svg>
+                  Sottocartella
+                </button>
+                <button class="ghost-action compact" id="editFolderButton" type="button">Rinomina</button>
+                <button class="ghost-action compact danger" id="deleteFolderButton" type="button">Elimina</button>
+              </div>
+            </section>
             <label class="search-box">
               <svg><use href="#icon-search"></use></svg>
               <input id="flowSearch" type="search" placeholder="Cerca nome, prompt, trigger o tool" />
@@ -282,6 +330,7 @@
               <span>Parametri JSON</span>
               <textarea id="nodeParamsInput" rows="12" spellcheck="false"></textarea>
             </label>
+            <div class="agent-tool-preview" id="agentToolsPreview"></div>
             <div class="guardrail-box">
               <svg><use href="#icon-shield"></use></svg>
               <p id="guardrailText">Seleziona un tool o un agente per vedere controlli e limiti.</p>
@@ -325,6 +374,7 @@
               <span>Fallback playbook · uno per riga</span>
               <textarea id="nodeFallbackInput" rows="10"></textarea>
             </label>
+            <div class="agent-task-policy" id="agentTaskPolicyPreview"></div>
             <div class="task-preview" id="taskPreview"></div>
           </div>
         </aside>
@@ -362,7 +412,7 @@
       </main>
 
       <main class="module-view view-panel" id="operationsView" data-view-panel="operations" hidden>
-        <header class="module-header panel"><div><p class="eyebrow">Operations Inbox</p><h2>Completare il macro-obiettivo</h2><p>Le anomalie tecniche sono contesto; la priorita è proteggere cliente, team e operativita.</p></div><div class="view-stat" id="operationsStat">0 task aperti</div></header>
+        <header class="module-header panel"><div><p class="eyebrow">Operations Inbox</p><h2>Completare il macro-obiettivo</h2><p>Le anomalie tecniche sono contesto; la priorita resta proteggere cliente, team e operativita.</p></div><div class="view-stat" id="operationsStat">0 task aperti</div></header>
         <div class="inbox-grid">
           <section class="inbox-list panel"><div class="filter-row"><button class="filter-chip active" type="button">Aperti</button><button class="filter-chip" type="button">Critici</button><button class="filter-chip" type="button">SLA &lt; 15m</button></div><div id="operationsList"></div></section>
           <section class="task-detail panel" id="operationsDetail"><div class="empty-panel">Avvia uno scenario con fallback umano per popolare la inbox.</div></section>
@@ -401,6 +451,62 @@
     </section>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <dialog class="crud-dialog" id="flowCrudDialog" aria-labelledby="flowCrudTitle">
+      <form id="flowCrudForm" class="crud-form">
+        <div class="crud-dialog-header">
+          <div>
+            <p class="eyebrow">CRUD flussi</p>
+            <h2 id="flowCrudTitle">Nuovo flusso</h2>
+          </div>
+          <button class="icon-button small" id="closeFlowDialogButton" type="button" aria-label="Chiudi finestra">
+            <svg><use href="#icon-stop"></use></svg>
+          </button>
+        </div>
+        <div class="crud-grid">
+          <label class="field"><span>Nome flusso</span><input id="flowCrudName" type="text" required /></label>
+          <label class="field"><span>Cartella</span><select id="flowCrudFolder"></select></label>
+          <label class="field"><span>Categoria operativa</span><input id="flowCrudCategory" type="text" placeholder="Prenotazioni, Accessi, Compliance..." /></label>
+          <label class="field"><span>Trigger</span><input id="flowCrudTrigger" type="text" placeholder="webhook.eventName" /></label>
+          <label class="field"><span>Livello</span><select id="flowCrudLevel"><option>Core</option><option>Avanzato</option></select></label>
+          <label class="field wide"><span>Sintesi</span><textarea id="flowCrudSummary" rows="4" placeholder="Descrivi lo scopo operativo del flusso"></textarea></label>
+        </div>
+        <div class="crud-hint">
+          <strong>Creazione da zero</strong>
+          <span>Il nuovo flusso parte con trigger, agente e outcome vuoti da configurare nel canvas.</span>
+        </div>
+        <div class="crud-actions">
+          <button class="ghost-action" id="cancelFlowCrudButton" type="button">Annulla</button>
+          <button class="primary-action" type="submit">Salva flusso</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="crud-dialog" id="folderCrudDialog" aria-labelledby="folderCrudTitle">
+      <form id="folderCrudForm" class="crud-form">
+        <div class="crud-dialog-header">
+          <div>
+            <p class="eyebrow">Organizzazione</p>
+            <h2 id="folderCrudTitle">Nuova cartella</h2>
+          </div>
+          <button class="icon-button small" id="closeFolderDialogButton" type="button" aria-label="Chiudi finestra">
+            <svg><use href="#icon-stop"></use></svg>
+          </button>
+        </div>
+        <div class="crud-grid one-column">
+          <label class="field"><span>Nome cartella</span><input id="folderCrudName" type="text" required /></label>
+          <label class="field"><span>Dentro</span><select id="folderCrudParent"></select></label>
+        </div>
+        <div class="crud-hint">
+          <strong>Cartelle e sottocartelle</strong>
+          <span>Usale per organizzare i flussi senza cambiare la struttura tecnica dei nodi.</span>
+        </div>
+        <div class="crud-actions">
+          <button class="ghost-action" id="cancelFolderCrudButton" type="button">Annulla</button>
+          <button class="primary-action" type="submit">Salva cartella</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="catalog.js" defer></script>
     <script src="audit.js" defer></script>
