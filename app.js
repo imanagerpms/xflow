@@ -30,8 +30,8 @@ const paletteItems = [
   },
   {
     type: "agent",
-    title: "Sotto-agente",
-    description: "Prompt operativo con policy e obiettivo.",
+    title: "Agente unico",
+    description: "Prompt operativo che descrive e genera il flow.",
   },
   {
     type: "tool",
@@ -47,6 +47,23 @@ const paletteItems = [
     type: "guardrail",
     title: "Controllo",
     description: "Regole di sicurezza, privacy e approvazione.",
+  },
+];
+
+const bookingFolderTools = [
+  {
+    function: "getReservation",
+    label: "getReservation",
+    purpose: "Recupera una prenotazione dal channel manager / PMS Octorate.",
+    critical: true,
+    params: { reservation_id: "{{reservation.id}}", provider: "Octorate" },
+  },
+  {
+    function: "Sendmail",
+    label: "Sendmail",
+    purpose: "Invia email operative o comunicazioni ospite con template tracciabile.",
+    critical: true,
+    params: { to: "{{guest.email}}", subject: "{{email.subject}}", body: "{{email.body}}" },
   },
 ];
 
@@ -1080,6 +1097,18 @@ function cacheElements() {
   els.nodeDescriptionInput = document.querySelector("#nodeDescriptionInput");
   els.nodeConditionInput = document.querySelector("#nodeConditionInput");
   els.nodePromptInput = document.querySelector("#nodePromptInput");
+  els.agentFlowPromptTitle = document.querySelector("#agentFlowPromptTitle");
+  els.agentFlowVariantNameInput = document.querySelector("#agentFlowVariantNameInput");
+  els.agentFlowVariantSelect = document.querySelector("#agentFlowVariantSelect");
+  els.agentFlowVariantList = document.querySelector("#agentFlowVariantList");
+  els.renameAgentFlowVariantButton = document.querySelector("#renameAgentFlowVariantButton");
+  els.duplicateAgentFlowVariantButton = document.querySelector("#duplicateAgentFlowVariantButton");
+  els.deleteAgentFlowVariantButton = document.querySelector("#deleteAgentFlowVariantButton");
+  els.generateAgentFlowButton = document.querySelector("#generateAgentFlowButton");
+  els.regenerateAgentFlowButton = document.querySelector("#regenerateAgentFlowButton");
+  els.runAgentFlowButton = document.querySelector("#runAgentFlowButton");
+  els.runAgentFlowFromPromptButton = document.querySelector("#runAgentFlowFromPromptButton");
+  els.clearAgentPromptButton = document.querySelector("#clearAgentPromptButton");
   els.nodeToolInput = document.querySelector("#nodeToolInput");
   els.nodeParamsInput = document.querySelector("#nodeParamsInput");
   els.agentToolsPreview = document.querySelector("#agentToolsPreview");
@@ -1128,10 +1157,22 @@ function bindEvents() {
   els.flowSearch.addEventListener("input", renderFlowList);
   els.simulateButton.addEventListener("click", toggleSimulation);
   els.saveButton.addEventListener("click", () => {
+    const flow = getCurrentFlow();
+    if (flow) saveActiveAgentFlowVariant(flow);
     showToast("Configurazione salvata in memoria locale del browser.");
     persistState();
   });
   els.newFlowButton.addEventListener("click", () => openFlowCrudDialog("create"));
+  els.generateAgentFlowButton?.addEventListener("click", generateFlowFromSelectedAgentPrompt);
+  els.regenerateAgentFlowButton?.addEventListener("click", regenerateActiveAgentFlowVariant);
+  els.agentFlowVariantSelect?.addEventListener("change", activateSelectedAgentFlowVariant);
+  els.agentFlowVariantList?.addEventListener("click", handleAgentFlowListClick);
+  els.renameAgentFlowVariantButton?.addEventListener("click", renameActiveAgentFlowVariant);
+  els.duplicateAgentFlowVariantButton?.addEventListener("click", duplicateActiveAgentFlowVariant);
+  els.deleteAgentFlowVariantButton?.addEventListener("click", deleteActiveAgentFlowVariant);
+  els.runAgentFlowButton?.addEventListener("click", runCurrentFlowPreview);
+  els.runAgentFlowFromPromptButton?.addEventListener("click", runCurrentFlowPreview);
+  els.clearAgentPromptButton?.addEventListener("click", clearSelectedAgentPrompt);
   els.duplicateFlowButton?.addEventListener("click", duplicateCurrentFlow);
   els.editFlowButton?.addEventListener("click", () => openFlowCrudDialog("edit"));
   els.deleteFlowButton?.addEventListener("click", deleteCurrentFlow);
@@ -1231,6 +1272,7 @@ function bindEvents() {
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
       state.activeTab = tab.dataset.tab;
+      if (state.activeTab === "prompt") selectCurrentFlowAgent();
       renderTabs();
     });
   });
@@ -1248,6 +1290,19 @@ function bindEvents() {
       node[field] = event.target.value;
       renderCanvas();
       renderFlowList();
+      if (field === "prompt" && els.generateAgentFlowButton) {
+        els.generateAgentFlowButton.disabled = node.type !== "agent" || !event.target.value.trim();
+      }
+      if (field === "prompt" && els.runAgentFlowButton) {
+        els.runAgentFlowButton.disabled = !getCurrentFlow()?.nodes.length;
+      }
+      if (field === "prompt" && els.clearAgentPromptButton) {
+        els.clearAgentPromptButton.disabled = node.type !== "agent" || !event.target.value.trim();
+      }
+      if (field === "prompt" && node.type === "agent") {
+        saveActiveAgentFlowVariant(getCurrentFlow());
+        renderAgentFlowVariantControls(node);
+      }
     });
   });
 
@@ -1654,8 +1709,39 @@ function ensureFlowOrganization() {
   const folderIds = new Set(state.flowFolders.map((folder) => folder.id));
   flows.forEach((flow) => {
     if (!flow.folderId || !folderIds.has(flow.folderId)) flow.folderId = getDefaultFolderIdForGroup(flow.group);
+    applyBookingFolderTools(flow);
   });
   if (state.selectedFolderId && !folderIds.has(state.selectedFolderId)) state.selectedFolderId = null;
+}
+
+function applyBookingFolderTools(flow) {
+  if (!flow || !isBookingFolderFlow(flow)) return;
+  flow.availableTools = structuredClone(bookingFolderTools);
+  flow.nodes?.forEach((node) => {
+    if (node.type !== "agent") return;
+    node.tools = mergeToolDefinitions(bookingFolderTools, Array.isArray(node.tools) ? node.tools : []);
+    node.params = {
+      ...(node.params || {}),
+      available_tools: node.tools.map((tool) => tool.function),
+      booking_tool_scope: "Prenotazioni",
+    };
+  });
+}
+
+function isBookingFolderFlow(flow) {
+  const folderPath = getFolderPath(flow.folderId).join(" / ").toLowerCase();
+  return flow.group === "bookings" || folderPath.includes("prenotazioni");
+}
+
+function mergeToolDefinitions(primaryTools, secondaryTools) {
+  const merged = [];
+  const seen = new Set();
+  [...primaryTools, ...secondaryTools].forEach((tool) => {
+    if (!tool?.function || seen.has(tool.function)) return;
+    seen.add(tool.function);
+    merged.push(structuredClone(tool));
+  });
+  return merged;
 }
 
 function getDefaultFolderIdForGroup(groupId) {
@@ -2115,6 +2201,698 @@ function createFlowFromScratch(data) {
   renderAll();
 }
 
+function generateFlowFromSelectedAgentPrompt() {
+  const sourceFlow = getCurrentFlow();
+  const sourceAgent = getSelectedNode();
+  const prompt = String(els.nodePromptInput?.value || sourceAgent?.prompt || "").trim();
+  if (!sourceFlow || sourceAgent?.type !== "agent" || !prompt) {
+    showToast("Seleziona un agente AI con prompt compilato.");
+    return;
+  }
+
+  stopSimulation(false);
+  const blueprint = buildAgentGeneratedFlowBlueprint(prompt, sourceFlow, sourceAgent);
+  const generatedFlow = createAgentGeneratedFlow(blueprint);
+  const variant = createAgentFlowVariant(sourceFlow, generatedFlow);
+  sourceFlow.generatedFlowVariants = Array.isArray(sourceFlow.generatedFlowVariants) ? sourceFlow.generatedFlowVariants : [];
+  sourceFlow.generatedFlowVariants.push(variant);
+  sourceFlow.activeGeneratedFlowId = variant.id;
+  applyAgentFlowVariant(sourceFlow, variant);
+  state.currentFlowId = sourceFlow.id;
+  state.selectedNodeId = sourceFlow.nodes.find((node) => node.type === "agent")?.id || sourceFlow.nodes[0]?.id;
+  state.selectedFolderId = sourceFlow.folderId;
+  if (sourceFlow.folderId) state.closedFolderIds.delete(sourceFlow.folderId);
+  setActiveView("studio");
+  persistState();
+  renderAll();
+  if (els.agentFlowVariantNameInput) els.agentFlowVariantNameInput.value = "";
+  state.nodeStatuses = {};
+  state.activeEdges = new Set();
+  setRuntimeStatus("ready", "Flow creato");
+  renderLog([`Flow attivo creato dal prompt: ${variant.name}`]);
+  showToast(`Nuovo flusso "${variant.name}" creato e impostato come attivo.`);
+}
+
+function regenerateActiveAgentFlowVariant() {
+  const flow = getCurrentFlow();
+  const sourceAgent = getSelectedNode();
+  const variant = getActiveAgentFlowVariant(flow);
+  const prompt = String(els.nodePromptInput?.value || sourceAgent?.prompt || "").trim();
+  if (!flow || sourceAgent?.type !== "agent" || !prompt) return showToast("Seleziona un flusso e compila il prompt agente.");
+  if (!variant) return showToast("Crea prima un flusso da rigenerare.");
+  stopSimulation(false);
+  const blueprint = buildAgentGeneratedFlowBlueprint(prompt, flow, sourceAgent);
+  const generatedFlow = createAgentGeneratedFlow(blueprint);
+  variant.nodes = [];
+  variant.edges = [];
+  variant.simulationOrder = [];
+  Object.assign(variant, {
+    summary: generatedFlow.summary,
+    trigger: generatedFlow.trigger,
+    businessGoal: generatedFlow.businessGoal,
+    availableTools: structuredClone(generatedFlow.availableTools || []),
+    metrics: structuredClone(generatedFlow.metrics || {}),
+    nodes: structuredClone(generatedFlow.nodes || []),
+    edges: structuredClone(generatedFlow.edges || []),
+    simulationOrder: structuredClone(generatedFlow.simulationOrder || []),
+    updatedAt: new Date().toISOString(),
+  });
+  applyAgentFlowVariant(flow, variant);
+  state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
+  setActiveView("studio");
+  persistState();
+  renderAll();
+  renderLog([`Flow rigenerato dal prompt: ${variant.name}`]);
+  showToast(`Flusso rigenerato: ${variant.name}`);
+}
+
+function createAgentFlowVariant(sourceFlow, generatedFlow) {
+  const customName = els.agentFlowVariantNameInput?.value.trim();
+  const variants = Array.isArray(sourceFlow.generatedFlowVariants) ? sourceFlow.generatedFlowVariants : [];
+  const name = customName || `Flusso ${variants.length + 1}`;
+  return {
+    id: uniqueAgentFlowVariantId(sourceFlow, name),
+    name,
+    createdAt: new Date().toISOString(),
+    summary: generatedFlow.summary,
+    trigger: generatedFlow.trigger,
+    businessGoal: generatedFlow.businessGoal,
+    availableTools: structuredClone(generatedFlow.availableTools || []),
+    metrics: structuredClone(generatedFlow.metrics || {}),
+    nodes: structuredClone(generatedFlow.nodes || []),
+    edges: structuredClone(generatedFlow.edges || []),
+    simulationOrder: structuredClone(generatedFlow.simulationOrder || []),
+  };
+}
+
+function activateSelectedAgentFlowVariant() {
+  const flow = getCurrentFlow();
+  const variantId = els.agentFlowVariantSelect?.value;
+  activateAgentFlowVariantById(variantId, flow);
+}
+
+function handleAgentFlowListClick(event) {
+  const button = event.target.closest("[data-flow-action]");
+  const row = event.target.closest("[data-flow-variant-id]");
+  if (!row) return;
+  const variantId = row.dataset.flowVariantId;
+  if (!button) {
+    activateAgentFlowVariantById(variantId);
+    return;
+  }
+  const action = button.dataset.flowAction;
+  if (action === "activate") activateAgentFlowVariantById(variantId);
+  if (action === "edit") editAgentFlowVariantPrompt(variantId);
+  if (action === "duplicate") duplicateActiveAgentFlowVariant(variantId);
+  if (action === "delete") deleteActiveAgentFlowVariant(variantId);
+  if (action === "run") {
+    activateAgentFlowVariantById(variantId);
+    runCurrentFlowPreview();
+  }
+}
+
+function editAgentFlowVariantPrompt(variantId) {
+  activateAgentFlowVariantById(variantId);
+  state.activeTab = "prompt";
+  renderTabs();
+  requestAnimationFrame(() => els.nodePromptInput?.focus());
+}
+
+function activateAgentFlowVariantById(variantId, flow = getCurrentFlow()) {
+  if (!flow || !variantId) return;
+  const variant = (flow.generatedFlowVariants || []).find((item) => item.id === variantId);
+  if (!variant) return;
+  stopSimulation(false);
+  saveActiveAgentFlowVariant(flow);
+  flow.activeGeneratedFlowId = variant.id;
+  applyAgentFlowVariant(flow, variant);
+  state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
+  state.activeTab = "prompt";
+  setActiveView("studio");
+  persistState();
+  renderAll();
+  renderLog([`Flusso attivo: ${variant.name}`]);
+  showToast(`Flusso attivo: ${variant.name}`);
+}
+
+function renameActiveAgentFlowVariant(variantId = null) {
+  const flow = getCurrentFlow();
+  const variant = variantId ? (flow?.generatedFlowVariants || []).find((item) => item.id === variantId) : getActiveAgentFlowVariant(flow);
+  if (!variant) return showToast("Nessun flusso attivo da rinominare.");
+  const name = window.prompt("Nome flusso", variant.name)?.trim();
+  if (!name) return;
+  variant.name = name;
+  variant.updatedAt = new Date().toISOString();
+  persistState();
+  renderAgentFlowVariantControls();
+  showToast(`Flusso rinominato: ${name}`);
+}
+
+function duplicateActiveAgentFlowVariant(variantId = null) {
+  const flow = getCurrentFlow();
+  const variant = variantId ? (flow?.generatedFlowVariants || []).find((item) => item.id === variantId) : getActiveAgentFlowVariant(flow);
+  if (!flow || !variant) return showToast("Nessun flusso attivo da duplicare.");
+  saveActiveAgentFlowVariant(flow);
+  const clone = structuredClone(variant);
+  clone.name = `${variant.name} copia`;
+  clone.id = uniqueAgentFlowVariantId(flow, clone.name);
+  clone.createdAt = new Date().toISOString();
+  delete clone.updatedAt;
+  flow.generatedFlowVariants = Array.isArray(flow.generatedFlowVariants) ? flow.generatedFlowVariants : [];
+  flow.generatedFlowVariants.push(clone);
+  flow.activeGeneratedFlowId = clone.id;
+  applyAgentFlowVariant(flow, clone);
+  state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
+  persistState();
+  renderAll();
+  showToast(`Flusso duplicato: ${clone.name}`);
+}
+
+function deleteActiveAgentFlowVariant(variantId = null) {
+  const flow = getCurrentFlow();
+  const variant = variantId ? (flow?.generatedFlowVariants || []).find((item) => item.id === variantId) : getActiveAgentFlowVariant(flow);
+  if (!flow || !variant) return showToast("Nessun flusso attivo da eliminare.");
+  if (!window.confirm(`Eliminare il flusso "${variant.name}"?`)) return;
+  const variants = (flow.generatedFlowVariants || []).filter((item) => item.id !== variant.id);
+  flow.generatedFlowVariants = variants;
+  const next = variants.at(-1) || null;
+  if (next) {
+    flow.activeGeneratedFlowId = next.id;
+    applyAgentFlowVariant(flow, next);
+    state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
+  } else {
+    flow.activeGeneratedFlowId = null;
+    resetFlowToSingleAgent(flow);
+    state.selectedNodeId = flow.nodes[0]?.id || null;
+  }
+  persistState();
+  renderAll();
+  showToast(next ? `Flusso eliminato. Attivo: ${next.name}` : "Flusso eliminato. Nessuna variante attiva.");
+}
+
+function getActiveAgentFlowVariant(flow = getCurrentFlow()) {
+  if (!flow) return null;
+  return (flow.generatedFlowVariants || []).find((item) => item.id === flow.activeGeneratedFlowId) || null;
+}
+
+function resetFlowToSingleAgent(flow) {
+  const existingAgent = flow.nodes?.find((node) => node.type === "agent");
+  const agentId = `${flow.id}-agent`;
+  const prompt = existingAgent?.prompt || "";
+  flow.nodes = [
+    {
+      id: agentId,
+      type: "agent",
+      x: 330,
+      y: 190,
+      name: existingAgent?.name || "Agente operativo",
+      description: "Agente unico del flow: descrivi il processo nel prompt e crea una variante di flusso.",
+      condition: "Prompt da configurare",
+      prompt,
+      params: { memory: "booking_context", temperature: 0.2, requires_human_approval: false },
+      guardrail: "Crea un nuovo flusso dal prompt prima di eseguire.",
+    },
+  ];
+  flow.edges = [];
+  flow.simulationOrder = [agentId];
+  flow.metrics = { sla: "Da prompt", risk: "Da validare", agenti: "1 agente", automations: "0 tool" };
+}
+
+function applyAgentFlowVariant(flow, variant) {
+  flow.trigger = variant.trigger || flow.trigger;
+  flow.summary = variant.summary || flow.summary;
+  flow.businessGoal = variant.businessGoal || flow.businessGoal;
+  flow.availableTools = structuredClone(variant.availableTools || flow.availableTools || []);
+  flow.metrics = structuredClone(variant.metrics || flow.metrics || {});
+  flow.nodes = structuredClone(variant.nodes || []);
+  flow.edges = structuredClone(variant.edges || []);
+  flow.simulationOrder = structuredClone(variant.simulationOrder || []);
+}
+
+function saveActiveAgentFlowVariant(flow) {
+  const variant = (flow.generatedFlowVariants || []).find((item) => item.id === flow.activeGeneratedFlowId);
+  if (!variant) return;
+  Object.assign(variant, {
+    summary: flow.summary,
+    trigger: flow.trigger,
+    businessGoal: flow.businessGoal,
+    availableTools: structuredClone(flow.availableTools || []),
+    metrics: structuredClone(flow.metrics || {}),
+    nodes: structuredClone(flow.nodes || []),
+    edges: structuredClone(flow.edges || []),
+    simulationOrder: structuredClone(flow.simulationOrder || []),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function uniqueAgentFlowVariantId(flow, name) {
+  const base = `variant-${slugify(name || "flow") || "flow"}`;
+  const used = new Set((flow.generatedFlowVariants || []).map((variant) => variant.id));
+  let candidate = base;
+  let index = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+function runCurrentFlowPreview() {
+  const flow = getCurrentFlow();
+  if (!flow || !flow.nodes.length) {
+    showToast("Crea prima un diagramma di flusso.");
+    return;
+  }
+  saveActiveAgentFlowVariant(flow);
+  persistState();
+  runGeneratedFlowPreview(flow);
+}
+
+function clearSelectedAgentPrompt() {
+  const node = getSelectedNode();
+  const flow = getCurrentFlow();
+  if (!node || node.type !== "agent") {
+    showToast("Seleziona l'agente del flow per eliminare il prompt.");
+    return;
+  }
+  node.prompt = "";
+  if (els.nodePromptInput) els.nodePromptInput.value = "";
+  if (flow) saveActiveAgentFlowVariant(flow);
+  persistState();
+  renderInspector();
+  renderFlowList();
+  showToast("Prompt agente eliminato.");
+}
+
+function buildAgentGeneratedFlowBlueprint(prompt, sourceFlow, sourceAgent) {
+  const objective = extractPromptSection(prompt, "Obiettivo") || firstMeaningfulSentence(prompt) || "Obiettivo operativo descritto nel prompt";
+  const procedure = extractPromptSection(prompt, "Procedura") || extractPromptSection(prompt, "Istruzioni") || objective;
+  const tool = inferToolFromPrompt(prompt);
+  const trigger = inferTriggerFromPrompt(prompt, "agent.prompt.submitted");
+  const category = inferCategoryFromPrompt(prompt);
+  const shortObjective = compactText(objective, 92);
+  const name = sourceFlow.name;
+  const folderId = sourceFlow.folderId || state.selectedFolderId || getDefaultFolderIdForGroup(sourceFlow.group);
+  const groupId = getGroupIdForFolder(folderId) || sourceFlow.group || getBusinessGroups()[0]?.id || "custom";
+  return {
+    id: sourceFlow.id,
+    name,
+    category,
+    trigger,
+    prompt,
+    procedure,
+    tool,
+    folderId,
+    groupId,
+    level: "Core",
+    sourceAgentName: sourceAgent.name,
+    sourceFlowName: "",
+    bookingToolScope: isBookingFolderFlow(sourceFlow),
+    availableTools: isBookingFolderFlow(sourceFlow) ? structuredClone(bookingFolderTools) : [],
+    summary: `Flow generato dall'agente "${sourceAgent.name}" per: ${shortObjective}`,
+    businessGoal: `raggiungere e verificare: ${shortObjective}`,
+  };
+}
+
+function createAgentGeneratedFlow(blueprint) {
+  const ids = {
+    trigger: `${blueprint.id}-trigger`,
+    agent: `${blueprint.id}-agent`,
+    policy: `${blueprint.id}-policy`,
+    message: `${blueprint.id}-message`,
+    task: `${blueprint.id}-task`,
+    outcome: `${blueprint.id}-outcome`,
+  };
+  const generatedTools = deriveGeneratedToolSpecs(blueprint).slice(0, 4);
+  const communicationTool = blueprint.bookingToolScope ? "Sendmail" : "guest.sendMessage";
+  const toolNodes = generatedTools.map((tool, index) => ({
+    id: `${blueprint.id}-tool-${index + 1}`,
+    type: "tool",
+    x: 620 + index * 285,
+    y: index % 2 === 0 ? 112 : 332,
+    name: tool.label,
+    description: `Intervento dell'agente: ${tool.purpose}`,
+    condition: index === 0 ? "policy.status == 'pass'" : `tool_${index}.status == 'succeeded'`,
+    tool: tool.function,
+    agentIntervention: true,
+    agentId: ids.agent,
+    agentLabel: blueprint.sourceAgentName || "Agente operativo",
+    params: { booking_id: "{{booking.id}}", dry_run: false, idempotency_key: `{{booking.id}}:${blueprint.id}:${index + 1}:v1` },
+    guardrail: "Timeout, errore provider o failure definitiva aprono fallback operativo.",
+  }));
+  const lastToolId = toolNodes.at(-1)?.id || ids.policy;
+  const hasCommunicationToolNode = generatedTools.some((tool) => tool.function === communicationTool);
+  const messageNode = hasCommunicationToolNode ? null : {
+    id: ids.message,
+    type: "message",
+    x: 620 + Math.max(1, toolNodes.length) * 285,
+    y: 176,
+    name: "Comunica esito",
+    description: "Invia aggiornamento sintetico a ospite o team solo dopo esito verificabile.",
+    condition: "azioni_operative.status == 'succeeded'",
+    tool: communicationTool,
+    agentIntervention: true,
+    agentId: ids.agent,
+    agentLabel: blueprint.sourceAgentName || "Agente operativo",
+    params: blueprint.bookingToolScope
+      ? { to: "{{guest.email}}", subject: "{{email.subject}}", body: "{{email.body}}", business_goal: blueprint.businessGoal }
+      : { channel: "whatsapp", template: "agent_generated_update", business_goal: blueprint.businessGoal },
+    guardrail: "Non promettere risultati non confermati da tool, task o evidenza operativa.",
+  };
+  const taskDefinition = {
+    title: `Completare manualmente: ${blueprint.name}`,
+    objective: blueprint.businessGoal,
+    tasklist: "iManager",
+    priority: "media",
+    requiredContext: ["booking_id", "guest_contact", "unit_id", "motivo_escalation"],
+    instructions: [
+      "Raggiungere manualmente lo stesso obiettivo operativo richiesto all'agente.",
+      "Validare il success contract prima di chiudere il task.",
+      "Registrare evidenza sintetica nella timeline operativa.",
+    ],
+    privacy: "Usare solo dati minimi e non copiare log tecnici nel task Operations.",
+  };
+  const agentTools = [
+    ...generatedTools.map((tool, index) => ({
+      function: tool.function,
+      label: tool.label,
+      purpose: tool.purpose,
+      critical: true,
+      failureRoute: ids.task,
+      params: { booking_id: "{{booking.id}}", dry_run: false, step_index: index + 1 },
+    })),
+    ...(!generatedTools.some((tool) => tool.function === communicationTool)
+      ? [{
+          function: communicationTool,
+          label: labelFromTool(communicationTool),
+          purpose: "Invia conferma o aggiornamento sul canale tracciabile corretto.",
+          critical: false,
+          params: blueprint.bookingToolScope
+            ? { to: "{{guest.email}}", subject: "{{email.subject}}", body: "{{email.body}}" }
+            : { channel: "whatsapp", template: "agent_generated_update" },
+        }]
+      : []),
+    {
+      function: "imanager.createTask",
+      label: "Fallback iManager",
+      purpose: "Apre un task operativo quando dati, policy o provider bloccano il flow.",
+      critical: true,
+      params: taskDefinition,
+    },
+  ];
+
+  return {
+    id: blueprint.id,
+    businessId: state.activeBusinessId,
+    group: blueprint.groupId,
+    folderId: blueprint.folderId,
+    name: blueprint.name,
+    category: blueprint.category,
+    summary: blueprint.summary,
+    trigger: blueprint.trigger,
+    level: blueprint.level,
+    agentModelVersion: 2,
+    agentMode: "agent_generated_executable_flow",
+    availableTools: structuredClone(blueprint.availableTools || []),
+    generatedByAgent: {
+      sourceAgent: blueprint.sourceAgentName,
+      sourceFlow: blueprint.sourceFlowName,
+      createdAt: new Date().toISOString(),
+    },
+    businessGoal: blueprint.businessGoal,
+    metrics: { sla: "Da prompt", risk: "Da validare", agenti: "1 agente", automations: `${agentTools.length} tool` },
+    simulationOrder: [ids.trigger, ids.agent, ids.policy, ...toolNodes.map((node) => node.id), ...(messageNode ? [ids.message] : []), ids.task, ids.outcome],
+    edges: [
+      { from: ids.trigger, to: ids.agent, outcome: "prompt_compilato" },
+      { from: ids.agent, to: ids.policy, outcome: "piano_generato" },
+      ...(toolNodes.length
+        ? [
+            { from: ids.policy, to: toolNodes[0].id, outcome: "policy_pass" },
+            ...toolNodes.slice(1).map((node, index) => ({ from: toolNodes[index].id, to: node.id, outcome: "step_ok" })),
+          ]
+        : []),
+      { from: lastToolId, to: messageNode ? ids.message : ids.outcome, outcome: "azione_ok" },
+      { from: lastToolId, to: ids.task, outcome: "fallback_op" },
+      { from: ids.task, to: ids.outcome, outcome: "completato_manualmente" },
+      ...(messageNode ? [{ from: ids.message, to: ids.outcome, outcome: "success_contract_ok" }] : []),
+    ],
+    nodes: [
+      {
+        id: ids.trigger,
+        type: "trigger",
+        x: 42,
+        y: 260,
+        name: "Prompt agente ricevuto",
+        description: "L'agente riceve l'obiettivo operativo e crea il flow eseguibile.",
+        condition: blueprint.trigger,
+        params: { event: blueprint.trigger, source: "agent.prompt", source_agent: blueprint.sourceAgentName },
+        guardrail: "Il prompt deve contenere obiettivo operativo, dati minimi e criteri di successo verificabili.",
+      },
+      {
+        id: ids.agent,
+        type: "agent",
+        x: 330,
+        y: 170,
+        name: blueprint.sourceAgentName || "Agente operativo",
+        description: "Agente unico del flow: il prompt descrive il processo operativo e genera il diagramma eseguibile.",
+        condition: "prompt.valid == true",
+        businessGoal: blueprint.businessGoal,
+        capability: "create_and_execute_operational_flow_from_prompt",
+        prompt: blueprint.prompt,
+        tools: agentTools,
+        taskTemplates: [taskDefinition],
+        params: {
+          available_tools: agentTools.map((tool) => tool.function),
+          generated_from_prompt: true,
+        },
+        successContract: {
+          outcome: blueprint.businessGoal,
+          evidence_required: ["tool_status_succeeded_or_task_completed", "timeline_note", "guest_or_team_update_when_needed"],
+          no_duplicate_side_effects: true,
+        },
+        fallbackPlaybook: [
+          "Se il tool principale fallisce definitivamente, aprire task iManager sullo stesso macro-obiettivo.",
+          "Se mancano dati indispensabili, creare task Operations con il minimo contesto utile.",
+          "Se l'esito non e verificabile, non chiudere il flow e richiedere validazione umana.",
+        ],
+        guardrail: "Un solo agente governa il flow, lo esegue e apre sempre fallback operativo prima di fermarsi.",
+      },
+      {
+        id: ids.policy,
+        type: "guardrail",
+        x: 620,
+        y: 76,
+        name: "Policy e dati minimi",
+        description: "Verifica autorizzazioni, dati disponibili e success contract prima delle azioni.",
+        condition: "dati_minimi && policy.status == 'pass'",
+        params: { checks: ["dati_minimi", "autorizzazione", "privacy", "success_contract"], failure_route: ids.task },
+        guardrail: "Blocca azioni non autorizzate e instrada a task Operations.",
+      },
+      ...toolNodes,
+      ...(messageNode ? [messageNode] : []),
+      {
+        id: ids.task,
+        type: "human_task",
+        x: 620 + Math.max(1, toolNodes.length) * 285,
+        y: 418,
+        name: "Fallback Op",
+        description: "Manual Task iManager creato dall'agente per completare lo stesso outcome quando tool, dati o policy bloccano il flow.",
+        condition: "tool.failure || policy.needs_human || missing_data",
+        businessGoal: blueprint.businessGoal,
+        capability: "create_operations_fallback_task",
+        tool: "imanager.createTask",
+        agentIntervention: true,
+        agentId: ids.agent,
+        agentLabel: blueprint.sourceAgentName || "Agente operativo",
+        taskDefinition,
+        params: taskDefinition,
+        guardrail: "Il task tecnico non sostituisce mai il task Operations sul macro-obiettivo.",
+      },
+      {
+        id: ids.outcome,
+        type: "outcome",
+        x: 905 + Math.max(1, toolNodes.length) * 285,
+        y: 276,
+        name: "Outcome validato",
+        description: "Stato terminale esplicito: success contract verificato e audit registrato.",
+        condition: "success_contract.validated == true",
+        businessGoal: blueprint.businessGoal,
+        params: { status: "completed", generated_by_agent: true },
+        guardrail: "Non rieseguire side effect gia completate durante ripresa o retry.",
+      },
+    ],
+  };
+}
+
+function runGeneratedFlowPreview(flow) {
+  clearGeneratedFlowPreview();
+  setActiveView("studio");
+  state.runtimeRun = null;
+  runtimeStore.clear();
+  state.nodeStatuses = {};
+  state.activeEdges = new Set();
+  state.simulationIndex = -1;
+  setRuntimeTerminalVisible(true);
+  setRuntimeTerminalOpen(true);
+  setRuntimeStatus("running", "Flow generato in esecuzione");
+  renderLog(["00 / agent.flow_created · grafo operativo generato dal prompt"]);
+  showToast("Flow creato dal prompt dell'agente ed esecuzione visuale avviata.");
+  const order = flow.simulationOrder.filter((nodeId) => flow.nodes.some((node) => node.id === nodeId));
+  const tick = () => {
+    state.simulationIndex += 1;
+    const nodeId = order[state.simulationIndex];
+    const previousNodeId = order[state.simulationIndex - 1];
+    if (!nodeId) {
+      if (previousNodeId) state.nodeStatuses[previousNodeId] = "done";
+      state.activeEdges = new Set();
+      state.selectedNodeId = previousNodeId || state.selectedNodeId;
+      clearGeneratedFlowPreview();
+      setRuntimeStatus("completed", "Flow completato");
+      renderCanvas();
+      renderInspector();
+      renderLog([...order.map((id, index) => `${String(index + 1).padStart(2, "0")} / node.completed · ${flow.nodes.find((node) => node.id === id)?.name || id}`), "OK / success_contract · outcome validato"]);
+      showToast("Esecuzione visuale completata. Il flow resta modificabile nello Studio.");
+      return;
+    }
+    if (previousNodeId) state.nodeStatuses[previousNodeId] = "done";
+    state.nodeStatuses[nodeId] = "running";
+    state.selectedNodeId = nodeId;
+    state.activeEdges = new Set(previousNodeId ? [`${previousNodeId}:${nodeId}`] : []);
+    renderCanvas();
+    renderInspector();
+    renderLog(order.slice(0, state.simulationIndex + 1).map((id, index) => `${String(index + 1).padStart(2, "0")} / node.running · ${flow.nodes.find((node) => node.id === id)?.name || id}`), state.simulationIndex);
+  };
+  tick();
+  state.simulationTimer = window.setInterval(tick, 520);
+}
+
+function clearGeneratedFlowPreview() {
+  if (state.simulationTimer) window.clearInterval(state.simulationTimer);
+  state.simulationTimer = null;
+}
+
+function extractPromptSection(prompt, label) {
+  const match = prompt.match(new RegExp(`${label}\\s*:\\s*([^\\n]+(?:\\n(?!\\s*[A-ZÀ-Ú][\\wÀ-ÿ ]{2,30}\\s*:)[^\\n]+)*)`, "i"));
+  return match ? match[1].trim().replace(/\s+/g, " ") : "";
+}
+
+function firstMeaningfulSentence(text) {
+  return text.split(/[.!?]\s|\n/).map((item) => item.trim()).find((item) => item.length > 24) || "";
+}
+
+function deriveGeneratedToolSpecs(blueprint) {
+  const prompt = `${blueprint.prompt}\n${blueprint.procedure || ""}`;
+  if (blueprint.bookingToolScope) return deriveBookingToolSpecsFromPrompt(prompt);
+  const explicitTools = [...prompt.matchAll(/\b(?:tool|funzione)\s*:\s*([a-z0-9_.-]+)/gi)].map((match) => match[1]);
+  const steps = extractProcedureSteps(prompt);
+  const inferred = steps.map((step) => inferToolSpecFromText(step)).filter(Boolean);
+  const primary = inferToolSpecFromText(prompt) || { function: blueprint.tool, label: labelFromTool(blueprint.tool), purpose: "Esegue l'azione principale descritta nel prompt." };
+  const candidates = [
+    ...explicitTools.map((tool) => ({ function: tool, label: labelFromTool(tool), purpose: "Tool esplicito indicato nel prompt agente." })),
+    ...inferred,
+    primary,
+  ];
+  const seen = new Set();
+  return candidates.filter((tool) => {
+    if (!tool?.function || seen.has(tool.function)) return false;
+    seen.add(tool.function);
+    return true;
+  });
+}
+
+function deriveBookingToolSpecsFromPrompt(prompt) {
+  const lower = String(prompt || "").toLowerCase();
+  const selected = [];
+  const wantsReservation = /prenotaz|reservation|octorate|pms|channel\s*manager|channelmanager|booking/.test(lower);
+  const wantsMail = /mail|email|e-mail|sendmail|messagg|comunica|invia|spedisc|scritt/.test(lower);
+  if (wantsReservation) selected.push(bookingFolderTools.find((tool) => tool.function === "getReservation"));
+  if (wantsMail) selected.push(bookingFolderTools.find((tool) => tool.function === "Sendmail"));
+  if (!selected.length) {
+    const explicit = String(prompt || "").match(/(?:tool|funzione)\s*:\s*(getReservation|Sendmail)/i)?.[1];
+    if (explicit) selected.push(bookingFolderTools.find((tool) => tool.function.toLowerCase() === explicit.toLowerCase()));
+  }
+  return selected.filter(Boolean).map((tool) => structuredClone(tool));
+}
+
+function extractProcedureSteps(text) {
+  const procedure = extractPromptSection(text, "Procedura") || extractPromptSection(text, "Istruzioni") || text;
+  return procedure
+    .split(/\n|(?:^|\s)\d+[\).]\s+/)
+    .map((item) => item.replace(/^[-*]\s*/, "").trim())
+    .filter((item) => item.length > 18)
+    .slice(0, 6);
+}
+
+function inferToolSpecFromText(text) {
+  const lower = String(text || "").toLowerCase();
+  const explicit = String(text || "").match(/(?:tool|funzione)\s*:\s*([a-z0-9_.-]+)/i)?.[1];
+  if (explicit) return { function: explicit, label: labelFromTool(explicit), purpose: "Tool esplicito indicato nel prompt agente." };
+  const rules = [
+    [/smart lock|access|codic|ingresso|porta|serratur/, "access.createSmartLockLink", "Genera o aggiorna accessi temporanei verificabili."],
+    [/pagament|saldo|rimbor|refund|addebito|deposito/, "payments.verifyAndExecuteAction", "Verifica importi, autorizzazioni e azioni economiche tracciate."],
+    [/prezzo|offerta|late checkout|upsell|revenue/, "revenue.calculateOffer", "Calcola disponibilita, prezzo e condizioni commerciali."],
+    [/manutenz|guasto|ticket|fornitore|ripar/, "maintenance.createTicket", "Apre ticket tecnico e instrada fornitore o staff."],
+    [/puliz|housekeeping|camera pronta|ispezion/, "housekeeping.createTask", "Crea o aggiorna task housekeeping con evidenze richieste."],
+    [/recension|review|survey|sentiment|reputation/, "stay.summarizeSentiment", "Analizza esperienza e decide richiesta recensione o recovery."],
+    [/messagg|whatsapp|email|sms|comunica|notifica/, "guest.sendMessage", "Invia comunicazione tracciabile a ospite o team."],
+    [/pms|timeline|nota|registro|audit/, "pms.addTimelineNote", "Registra note operative e audit nel PMS."],
+  ];
+  const match = rules.find(([pattern]) => pattern.test(lower));
+  if (!match) return null;
+  return { function: match[1], label: labelFromTool(match[1]), purpose: match[2] };
+}
+
+function inferTriggerFromPrompt(prompt, fallback) {
+  const lower = prompt.toLowerCase();
+  const explicit = prompt.match(/(?:trigger|evento)\s*:\s*([a-z0-9_.-]+)/i)?.[1];
+  if (explicit) return explicit;
+  if (lower.includes("check-in") || lower.includes("access")) return "agent.request.access_flow";
+  if (lower.includes("rimbor") || lower.includes("refund")) return "agent.request.refund_flow";
+  if (lower.includes("manutenz") || lower.includes("guasto")) return "agent.request.maintenance_flow";
+  if (lower.includes("recension") || lower.includes("review")) return "agent.request.reputation_flow";
+  if (lower.includes("puliz") || lower.includes("housekeeping")) return "agent.request.housekeeping_flow";
+  return fallback || "agent.prompt.submitted";
+}
+
+function inferCategoryFromPrompt(prompt) {
+  const lower = prompt.toLowerCase();
+  if (lower.includes("check-in") || lower.includes("access") || lower.includes("smart lock")) return "Accessi";
+  if (lower.includes("rimbor") || lower.includes("pagament") || lower.includes("refund")) return "Pagamenti";
+  if (lower.includes("manutenz") || lower.includes("guasto")) return "Manutenzione";
+  if (lower.includes("puliz") || lower.includes("housekeeping")) return "Housekeeping";
+  if (lower.includes("recension") || lower.includes("review") || lower.includes("survey")) return "Reputation";
+  if (lower.includes("upsell") || lower.includes("prezzo") || lower.includes("late checkout")) return "Revenue";
+  return "Da prompt";
+}
+
+function inferToolFromPrompt(prompt) {
+  const lower = prompt.toLowerCase();
+  const explicit = prompt.match(/(?:tool|funzione)\s*:\s*([a-z0-9_.-]+)/i)?.[1];
+  if (explicit) return explicit;
+  if (lower.includes("smart lock") || lower.includes("access") || lower.includes("codic")) return "access.createSmartLockLink";
+  if (lower.includes("rimbor") || lower.includes("refund")) return "payments.executeRefund";
+  if (lower.includes("prezzo") || lower.includes("late checkout") || lower.includes("offerta")) return "revenue.calculateOffer";
+  if (lower.includes("manutenz") || lower.includes("guasto") || lower.includes("ticket")) return "maintenance.createTicket";
+  if (lower.includes("recension") || lower.includes("survey") || lower.includes("sentiment")) return "stay.summarizeSentiment";
+  if (lower.includes("puliz") || lower.includes("housekeeping")) return "housekeeping.createTask";
+  if (lower.includes("messaggio") || lower.includes("whatsapp") || lower.includes("email")) return "guest.sendMessage";
+  return "ops.runTool";
+}
+
+function titleFromObjective(objective) {
+  return compactText(objective.replace(/^completa(re)?\s+/i, "").replace(/^raggiungere\s+/i, ""), 42);
+}
+
+function labelFromTool(tool) {
+  return humanize(String(tool || "ops.runTool").split(".").pop() || "tool operativo");
+}
+
+function compactText(value, maxLength) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
 function updateCurrentFlowMetadata(data) {
   const flow = getCurrentFlow();
   if (!flow) return;
@@ -2261,6 +3039,7 @@ function renderPalette() {
   paletteItems.forEach((item) => {
     const button = document.createElement("button");
     button.type = "button";
+    button.dataset.nodeType = item.type;
     button.className = `palette-item type-${item.type}`;
     button.innerHTML = `
       <span class="palette-icon">
@@ -2412,6 +3191,7 @@ function renderInspector() {
   if (!node) {
     els.inspectorTitle.textContent = "Nessun nodo selezionato";
     els.nodeBadge.hidden = true;
+    renderAgentFlowVariantControls(null);
     renderTabs();
     return;
   }
@@ -2438,12 +3218,28 @@ function renderInspector() {
   renderInspectorCompleteness(node);
   renderAgentToolsPreview(node);
   renderAgentTaskPolicyPreview(node);
+  renderAgentFlowVariantControls(node);
 
   const isAgent = node.type === "agent";
   const hasTool = Boolean(node.tool) || node.type === "tool" || node.type === "message";
   els.nodePromptInput.disabled = !isAgent;
   els.nodeToolInput.disabled = !hasTool;
   els.nodeParamsInput.disabled = !(node.params || hasTool || node.type === "trigger" || node.type === "guardrail");
+  if (els.generateAgentFlowButton) {
+    els.generateAgentFlowButton.disabled = !isAgent || !String(node.prompt || "").trim();
+  }
+  if (els.regenerateAgentFlowButton) {
+    els.regenerateAgentFlowButton.disabled = !isAgent || !String(node.prompt || "").trim() || !getActiveAgentFlowVariant();
+  }
+  if (els.runAgentFlowButton) {
+    els.runAgentFlowButton.disabled = !getCurrentFlow()?.nodes.length;
+  }
+  if (els.runAgentFlowFromPromptButton) {
+    els.runAgentFlowFromPromptButton.disabled = !getCurrentFlow()?.nodes.length || !getActiveAgentFlowVariant();
+  }
+  if (els.clearAgentPromptButton) {
+    els.clearAgentPromptButton.disabled = !isAgent || !String(node.prompt || "").trim();
+  }
   renderTabs();
 }
 
@@ -2466,16 +3262,96 @@ function renderTabs() {
   });
 }
 
+function renderAgentFlowVariantControls(node = getSelectedNode()) {
+  const flow = getCurrentFlow();
+  const isAgent = node?.type === "agent";
+  const variants = Array.isArray(flow?.generatedFlowVariants) ? flow.generatedFlowVariants : [];
+  const hasVariants = isAgent && variants.length > 0;
+  const activeVariant = getActiveAgentFlowVariant(flow);
+  if (els.agentFlowPromptTitle) {
+    els.agentFlowPromptTitle.textContent = activeVariant ? activeVariant.name : "Nessun flusso selezionato";
+  }
+  if (els.agentFlowVariantNameInput) {
+    els.agentFlowVariantNameInput.disabled = !isAgent;
+    if (!isAgent) els.agentFlowVariantNameInput.value = "";
+  }
+  [els.renameAgentFlowVariantButton, els.duplicateAgentFlowVariantButton, els.deleteAgentFlowVariantButton].forEach((button) => {
+    if (button) button.disabled = !hasVariants;
+  });
+  if (els.agentFlowVariantList) {
+    if (!isAgent) {
+      els.agentFlowVariantList.innerHTML = `<div class="agent-flow-empty">Seleziona l'agente per gestire i suoi flussi.</div>`;
+    } else if (!variants.length) {
+      els.agentFlowVariantList.innerHTML = `<div class="agent-flow-empty">Nessun flusso creato. Scrivi il prompt, assegna un nome e premi Crea.</div>`;
+    } else {
+      const activeId = flow.activeGeneratedFlowId || variants.at(-1)?.id;
+      els.agentFlowVariantList.innerHTML = variants.map((variant) => renderAgentFlowVariantRow(variant, variant.id === activeId)).join("");
+    }
+  }
+  if (!els.agentFlowVariantSelect) return;
+  els.agentFlowVariantSelect.disabled = !isAgent || variants.length === 0;
+  if (!isAgent) {
+    els.agentFlowVariantSelect.innerHTML = `<option value="">Seleziona un agente</option>`;
+    return;
+  }
+  if (!variants.length) {
+    els.agentFlowVariantSelect.innerHTML = `<option value="">Nessun flusso creato</option>`;
+    return;
+  }
+  const activeId = flow.activeGeneratedFlowId || variants.at(-1)?.id;
+  els.agentFlowVariantSelect.innerHTML = variants.map((variant) => {
+    const activeLabel = variant.id === activeId ? " · attivo" : "";
+    return `<option value="${escapeHtml(variant.id)}" ${variant.id === activeId ? "selected" : ""}>${escapeHtml(variant.name + activeLabel)}</option>`;
+  }).join("");
+}
+
+function renderAgentFlowVariantRow(variant, isActive) {
+  const nodeCount = Array.isArray(variant.nodes) ? variant.nodes.length : 0;
+  const toolCount = Array.isArray(variant.nodes) ? variant.nodes.filter((node) => node.type === "tool").length : 0;
+  return `
+    <article class="agent-flow-row ${isActive ? "is-active" : ""}" data-flow-variant-id="${escapeHtml(variant.id)}">
+      <button class="agent-flow-row-main" type="button" data-flow-action="activate" title="Imposta come flusso attivo">
+        <strong>${escapeHtml(variant.name)}</strong>
+        <span>${nodeCount} nodi · ${toolCount} tool${variant.updatedAt ? " · modificato" : ""}</span>
+        ${isActive ? `<span class="active-pill">attivo</span>` : ""}
+      </button>
+      <div class="agent-flow-row-actions">
+        <button class="icon-button small" type="button" data-flow-action="run" aria-label="Esegui flusso" title="Esegui flusso"><svg><use href="#icon-play"></use></svg></button>
+        <button class="icon-button small" type="button" data-flow-action="edit" aria-label="Modifica prompt flusso" title="Modifica prompt flusso"><svg><use href="#icon-edit"></use></svg></button>
+        <button class="icon-button small" type="button" data-flow-action="duplicate" aria-label="Duplica flusso" title="Duplica flusso"><svg><use href="#icon-copy"></use></svg></button>
+        <button class="icon-button small danger" type="button" data-flow-action="delete" aria-label="Elimina flusso" title="Elimina flusso"><svg><use href="#icon-trash"></use></svg></button>
+      </div>
+    </article>
+  `;
+}
+
 function renderEditorAvailability() {
   const hasFlow = Boolean(getCurrentFlow());
+  const selectedNode = getSelectedNode();
   els.saveButton.disabled = !hasFlow;
   els.simulateButton.disabled = !hasFlow;
+  if (els.generateAgentFlowButton) {
+    els.generateAgentFlowButton.disabled = !selectedNode || selectedNode.type !== "agent" || !String(selectedNode.prompt || "").trim();
+  }
+  if (els.regenerateAgentFlowButton) {
+    els.regenerateAgentFlowButton.disabled = !selectedNode || selectedNode.type !== "agent" || !String(selectedNode.prompt || "").trim() || !getActiveAgentFlowVariant();
+  }
+  if (els.runAgentFlowButton) {
+    els.runAgentFlowButton.disabled = !hasFlow || !getCurrentFlow()?.nodes.length;
+  }
+  if (els.runAgentFlowFromPromptButton) {
+    els.runAgentFlowFromPromptButton.disabled = !hasFlow || !getCurrentFlow()?.nodes.length || !getActiveAgentFlowVariant();
+  }
+  if (els.clearAgentPromptButton) {
+    els.clearAgentPromptButton.disabled = !selectedNode || selectedNode.type !== "agent" || !String(selectedNode.prompt || "").trim();
+  }
   if (els.newFlowButton) els.newFlowButton.disabled = false;
   if (els.duplicateFlowButton) els.duplicateFlowButton.disabled = !hasFlow;
   if (els.editFlowButton) els.editFlowButton.disabled = !hasFlow;
   if (els.deleteFlowButton) els.deleteFlowButton.disabled = !hasFlow;
+  const hasAgent = Boolean(getCurrentFlow()?.nodes.some((node) => node.type === "agent"));
   els.paletteGrid.querySelectorAll("button").forEach((button) => {
-    button.disabled = !hasFlow;
+    button.disabled = !hasFlow || (button.dataset.nodeType === "agent" && hasAgent);
   });
   renderFlowManagerActions();
 }
@@ -2563,11 +3439,24 @@ function selectNode(nodeId) {
   renderInspector();
 }
 
+function selectCurrentFlowAgent() {
+  const flow = getCurrentFlow();
+  const agent = flow?.nodes.find((node) => node.type === "agent");
+  if (!agent || state.selectedNodeId === agent.id) return;
+  state.selectedNodeId = agent.id;
+  renderCanvas();
+  renderInspector();
+}
+
 function addNode(type) {
   stopSimulation(false);
   setRuntimeStatus("ready", "Pronto");
   const flow = getCurrentFlow();
   if (!flow) return;
+  if (type === "agent" && flow.nodes.some((node) => node.type === "agent")) {
+    showToast("Ogni flow puo avere un solo agente. Modifica il prompt dell'agente esistente.");
+    return;
+  }
   const selected = getSelectedNode();
   const id = `${type}-${Date.now()}`;
   const baseX = Math.min((selected?.x || 60) + 290, 860);
@@ -2591,6 +3480,7 @@ function addNode(type) {
     flow.edges.push([selected.id, id]);
   }
   flow.simulationOrder.push(id);
+  saveActiveAgentFlowVariant(flow);
   state.selectedNodeId = id;
   showToast(`${typeLabels[type]} aggiunto al canvas.`);
   renderCanvasHeader();
@@ -2640,6 +3530,7 @@ function runNextSimulationStep() {
 
 function stopSimulation(showMessage) {
   stopAutoRun();
+  clearGeneratedFlowPreview();
   els.simulateButton.innerHTML = '<svg><use href="#icon-play"></use></svg><span>Simula</span>';
   els.simulateButton.setAttribute("aria-label", "Avvia simulazione");
   els.simulateButton.setAttribute("title", "Avvia simulazione");
@@ -2685,6 +3576,7 @@ function onPointerMove(event) {
     card.style.top = `${node.y}px`;
   }
   renderConnectors();
+  saveActiveAgentFlowVariant(flow);
 }
 
 function onPointerUp() {
@@ -2694,7 +3586,7 @@ function onPointerUp() {
 function defaultNameForType(type) {
   return {
     trigger: "Nuovo trigger",
-    agent: "Nuovo sotto-agente",
+    agent: "Nuovo agente",
     tool: "Nuova tool call",
     message: "Nuovo messaggio",
     guardrail: "Nuovo controllo",
@@ -2959,6 +3851,7 @@ function stopAutoRun() {
 
 function resetRuntime() {
   stopAutoRun();
+  clearGeneratedFlowPreview();
   runtimeEngine.run = null;
   runtimeEngine.flow = null;
   runtimeEngine.scenario = null;

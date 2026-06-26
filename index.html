@@ -282,7 +282,7 @@
 
           <div class="tabs" id="inspectorTabs" role="tablist" aria-label="Pannelli inspector" hidden>
             <button class="tab active" type="button" data-tab="config">Config</button>
-            <button class="tab" type="button" data-tab="prompt">Prompt</button>
+            <button class="tab" type="button" data-tab="prompt">Flussi</button>
             <button class="tab" type="button" data-tab="tools">Tool</button>
             <button class="tab" type="button" data-tab="outcome">Outcome</button>
             <button class="tab" type="button" data-tab="policy">Policy</button>
@@ -313,12 +313,54 @@
           <div class="tab-panel" id="promptPanel">
             <div class="prompt-hint">
               <svg><use href="#icon-bot"></use></svg>
-              <span>Prompt di sistema del sotto-agente selezionato.</span>
+              <span>Flussi gestiti dall'agente unico. Rigenera usa solo il testo nel Prompt agente.</span>
             </div>
-            <label class="field">
-              <span>Prompt agente</span>
-              <textarea id="nodePromptInput" rows="15"></textarea>
-            </label>
+            <div class="agent-flow-manager">
+              <div class="agent-flow-manager-header">
+                <div>
+                  <p class="eyebrow">Flussi agente</p>
+                  <strong>Elenco flussi</strong>
+                </div>
+                <button class="secondary-action compact" id="runAgentFlowButton" type="button">
+                  <svg><use href="#icon-play"></use></svg>
+                  Esegui attivo
+                </button>
+              </div>
+              <div class="agent-flow-create">
+                <input id="agentFlowVariantNameInput" type="text" placeholder="Nome flusso: Check-in, recovery, upsell..." />
+                <button class="primary-action compact" id="generateAgentFlowButton" type="button">
+                  <svg><use href="#icon-plus"></use></svg>
+                  Crea
+                </button>
+              </div>
+              <div class="agent-flow-list" id="agentFlowVariantList" aria-label="Flussi dell'agente"></div>
+            </div>
+            <section class="agent-flow-detail" aria-label="Prompt flusso selezionato">
+              <div class="agent-flow-detail-header">
+                <div>
+                  <p class="eyebrow">Prompt flusso</p>
+                  <strong id="agentFlowPromptTitle">Flusso attivo</strong>
+                </div>
+                <button class="ghost-action danger compact" id="clearAgentPromptButton" type="button">
+                  <svg><use href="#icon-trash"></use></svg>
+                  Elimina prompt
+                </button>
+              </div>
+              <label class="field">
+                <span>Prompt agente</span>
+                <textarea id="nodePromptInput" rows="12"></textarea>
+              </label>
+              <div class="agent-flow-detail-actions">
+                <button class="primary-action compact" id="regenerateAgentFlowButton" type="button">
+                  <svg><use href="#icon-zap"></use></svg>
+                  Rigenera flusso
+                </button>
+                <button class="secondary-action compact" id="runAgentFlowFromPromptButton" type="button">
+                  <svg><use href="#icon-play"></use></svg>
+                  Simula
+                </button>
+              </div>
+            </section>
           </div>
 
           <div class="tab-panel" id="toolsPanel">
