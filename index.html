@@ -172,8 +172,8 @@
       </main>
 
       <main class="workspace view-panel" id="studioView" data-view-panel="studio" hidden>
-        <aside class="sidebar panel">
-          <div class="sidebar-tabs" role="tablist" aria-label="Navigazione barra laterale">
+        <aside class="sidebar panel agent-sidebar">
+          <div class="sidebar-tabs" role="tablist" aria-label="Navigazione Studio agenti">
             <button
               class="sidebar-tab active"
               id="sidebarFlowsTab"
@@ -184,7 +184,7 @@
               data-sidebar-tab="flows"
             >
               <svg><use href="#icon-search"></use></svg>
-              Flussi
+              Agenti
             </button>
             <button
               class="sidebar-tab"
@@ -196,34 +196,34 @@
               data-sidebar-tab="tools"
             >
               <svg><use href="#icon-sliders"></use></svg>
-              Strumenti
+              Blocchi
             </button>
           </div>
 
-          <section class="sidebar-panel flow-browser" id="sidebarFlowsPanel" role="tabpanel" aria-labelledby="sidebarFlowsTab">
+          <section class="sidebar-panel flow-browser agent-browser" id="sidebarFlowsPanel" role="tabpanel" aria-labelledby="sidebarFlowsTab">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Flow manager</p>
-                <h2 id="flowBrowserTitle">Playbook operativo</h2>
+                <p class="eyebrow">Agent registry</p>
+                <h2 id="flowBrowserTitle">Agenti operativi</h2>
               </div>
               <div class="section-heading-actions">
-                <button class="icon-button small" id="newFlowButton" type="button" aria-label="Crea flusso da zero" title="Crea flusso da zero">
+                <button class="icon-button small" id="newFlowButton" type="button" aria-label="Crea agente" title="Crea agente">
                   <svg><use href="#icon-plus"></use></svg>
                 </button>
-                <button class="icon-button small" id="duplicateFlowButton" type="button" aria-label="Duplica flusso selezionato" title="Duplica flusso selezionato">
+                <button class="icon-button small" id="duplicateFlowButton" type="button" aria-label="Duplica agente selezionato" title="Duplica agente selezionato">
                   <svg><use href="#icon-copy"></use></svg>
                 </button>
-                <button class="icon-button small" id="editFlowButton" type="button" aria-label="Modifica flusso selezionato" title="Modifica flusso selezionato">
+                <button class="icon-button small" id="editFlowButton" type="button" aria-label="Modifica agente selezionato" title="Modifica agente selezionato">
                   <svg><use href="#icon-edit"></use></svg>
                 </button>
-                <button class="icon-button small danger" id="deleteFlowButton" type="button" aria-label="Elimina flusso selezionato" title="Elimina flusso selezionato">
+                <button class="icon-button small danger" id="deleteFlowButton" type="button" aria-label="Elimina agente selezionato" title="Elimina agente selezionato">
                   <svg><use href="#icon-trash"></use></svg>
                 </button>
               </div>
             </div>
-            <section class="flow-manager-box" aria-label="Gestione cartelle flussi">
+            <section class="flow-manager-box" aria-label="Gestione cartelle agenti">
               <div class="flow-manager-summary">
-                <span>Cartella attiva</span>
+                <span>Cartella agenti</span>
                 <strong id="folderContext">Nessuna cartella selezionata</strong>
               </div>
               <div class="folder-action-grid">
@@ -241,16 +241,16 @@
             </section>
             <label class="search-box">
               <svg><use href="#icon-search"></use></svg>
-              <input id="flowSearch" type="search" placeholder="Cerca nome, prompt, trigger o tool" />
+              <input id="flowSearch" type="search" placeholder="Cerca agente, tag, prompt, trigger o tool" />
             </label>
-            <div class="flow-list" id="flowList" aria-label="Elenco flussi"></div>
+            <div class="flow-list agent-list" id="flowList" aria-label="Albero agenti"></div>
           </section>
 
           <section class="sidebar-panel palette" id="sidebarToolsPanel" role="tabpanel" aria-labelledby="sidebarToolsTab" hidden>
             <div class="section-heading compact">
               <div>
                 <p class="eyebrow">Blocchi</p>
-                <h2>Palette low-code</h2>
+                <h2>Workflow builder</h2>
               </div>
             </div>
             <div class="palette-grid" id="paletteGrid"></div>
@@ -261,30 +261,96 @@
           <div class="canvas-toolbar panel">
             <div>
               <p class="eyebrow" id="flowCategory">Studio</p>
-              <h2 id="flowTitle">Nessun flusso selezionato</h2>
+              <h2 id="flowTitle">Nessun agente selezionato</h2>
             </div>
             <div class="flow-meta" id="flowMeta"></div>
           </div>
+
+          <section class="workflow-core panel" id="workflowCore" aria-label="Factory workflow">
+            <header class="workflow-core-header">
+              <div>
+                <p class="eyebrow">Studio workflow</p>
+                <h3>Workflow dell'agente</h3>
+              </div>
+              <div class="agent-model-control">
+                <label class="field compact">
+                  <span>Modello generatore</span>
+                  <select id="agentModelSelect"></select>
+                </label>
+                <span class="agent-generator-status" id="agentGeneratorStatus">ChatGPT 5.4 mini</span>
+              </div>
+            </header>
+
+            <div class="workflow-core-grid">
+              <section class="workflow-core-card agent-flow-manager" aria-label="CRUD workflow agente">
+                <div class="agent-flow-manager-header">
+                  <div>
+                    <p class="eyebrow">Workflow</p>
+                    <strong>Elenco</strong>
+                  </div>
+                  <button class="secondary-action compact" id="runAgentFlowButton" type="button">
+                    <svg><use href="#icon-play"></use></svg>
+                    Esegui attivo
+                  </button>
+                </div>
+                <div class="agent-flow-create">
+                  <input id="agentFlowVariantNameInput" type="text" placeholder="Nome workflow" />
+                  <button class="primary-action compact" id="generateAgentFlowButton" type="button">
+                    <svg><use href="#icon-plus"></use></svg>
+                    Crea
+                  </button>
+                </div>
+                <div class="agent-flow-list" id="agentFlowVariantList" aria-label="Workflow dell'agente"></div>
+              </section>
+
+              <section class="workflow-core-card agent-flow-detail" aria-label="Prompt workflow selezionato">
+                <div class="agent-flow-detail-header">
+                  <div>
+                    <p class="eyebrow">Prompt</p>
+                    <strong id="agentFlowPromptTitle">Workflow attivo</strong>
+                  </div>
+                  <button class="icon-button small danger" id="clearAgentPromptButton" type="button" aria-label="Elimina prompt" title="Elimina prompt">
+                    <svg><use href="#icon-trash"></use></svg>
+                  </button>
+                </div>
+                <label class="field workflow-prompt-field">
+                  <span>Prompt del workflow</span>
+                  <textarea id="nodePromptInput" rows="5"></textarea>
+                </label>
+                <div class="agent-flow-detail-actions">
+                  <button class="primary-action compact" id="regenerateAgentFlowButton" type="button">
+                    <svg><use href="#icon-zap"></use></svg>
+                    Ricostruisci
+                  </button>
+                  <button class="secondary-action compact" id="runAgentFlowFromPromptButton" type="button">
+                    <svg><use href="#icon-play"></use></svg>
+                    Simula
+                  </button>
+                </div>
+              </section>
+            </div>
+          </section>
+
           <div class="canvas-wrap panel">
             <svg id="connectorLayer" class="connector-layer" aria-hidden="true"></svg>
-            <div id="flowCanvas" class="flow-canvas" aria-label="Canvas del flusso"></div>
+            <div id="flowCanvas" class="flow-canvas" aria-label="Canvas del workflow"></div>
           </div>
         </section>
 
         <aside class="inspector panel">
           <div class="inspector-header">
             <div>
-              <p class="eyebrow">Inspector</p>
-              <h2 id="inspectorTitle">Nessun nodo selezionato</h2>
+              <p class="eyebrow">Agent Studio</p>
+              <h2 id="inspectorTitle">Nessun blocco selezionato</h2>
             </div>
             <span id="nodeBadge" class="node-badge" hidden></span>
           </div>
 
           <div class="tabs" id="inspectorTabs" role="tablist" aria-label="Pannelli inspector" hidden>
-            <button class="tab active" type="button" data-tab="config">Config</button>
-            <button class="tab" type="button" data-tab="prompt">Flussi</button>
+            <button class="tab active" type="button" data-tab="config">Agente</button>
+            <button class="tab" type="button" data-tab="prompt">Workflow</button>
             <button class="tab" type="button" data-tab="tools">Tool</button>
-            <button class="tab" type="button" data-tab="outcome">Outcome</button>
+            <button class="tab" type="button" data-tab="outcome">Success</button>
             <button class="tab" type="button" data-tab="policy">Policy</button>
             <button class="tab" type="button" data-tab="fallback">Fallback</button>
           </div>
@@ -292,17 +358,25 @@
           <div class="inspector-empty-state" id="inspectorEmpty">
             <svg aria-hidden="true"><use href="#icon-sliders"></use></svg>
             <strong>Inspector in attesa</strong>
-            <span>Seleziona un flusso e poi un nodo per modificarne configurazione, prompt e policy.</span>
+            <span>Seleziona un agente e poi un blocco per modificarne prompt, tool, policy e fallback.</span>
           </div>
 
           <div class="tab-panel active" id="configPanel">
             <label class="field">
-              <span>Nome nodo</span>
+              <span>Nome agente / blocco</span>
               <input id="nodeNameInput" type="text" />
             </label>
             <label class="field">
               <span>Descrizione operativa</span>
               <textarea id="nodeDescriptionInput" rows="5"></textarea>
+            </label>
+            <label class="field agent-only-field" id="agentCategoryField">
+              <span>Categoria agente</span>
+              <input id="agentCategoryInput" type="text" placeholder="Accessi, Revenue, Housekeeping..." />
+            </label>
+            <label class="field agent-only-field" id="agentTagsField">
+              <span>Tag agente</span>
+              <input id="agentTagsInput" type="text" placeholder="prenotazioni, smart-lock, ospite" />
             </label>
             <label class="field">
               <span>Condizione / routing</span>
@@ -311,56 +385,11 @@
           </div>
 
           <div class="tab-panel" id="promptPanel">
-            <div class="prompt-hint">
-              <svg><use href="#icon-bot"></use></svg>
-              <span>Flussi gestiti dall'agente unico. Rigenera usa solo il testo nel Prompt agente.</span>
+            <div class="workflow-tab-summary">
+              <p class="eyebrow">Workflow factory</p>
+              <strong id="workflowTabActiveName">Nessun workflow selezionato</strong>
+              <span id="workflowTabModelName">ChatGPT 5.4 mini</span>
             </div>
-            <div class="agent-flow-manager">
-              <div class="agent-flow-manager-header">
-                <div>
-                  <p class="eyebrow">Flussi agente</p>
-                  <strong>Elenco flussi</strong>
-                </div>
-                <button class="secondary-action compact" id="runAgentFlowButton" type="button">
-                  <svg><use href="#icon-play"></use></svg>
-                  Esegui attivo
-                </button>
-              </div>
-              <div class="agent-flow-create">
-                <input id="agentFlowVariantNameInput" type="text" placeholder="Nome flusso: Check-in, recovery, upsell..." />
-                <button class="primary-action compact" id="generateAgentFlowButton" type="button">
-                  <svg><use href="#icon-plus"></use></svg>
-                  Crea
-                </button>
-              </div>
-              <div class="agent-flow-list" id="agentFlowVariantList" aria-label="Flussi dell'agente"></div>
-            </div>
-            <section class="agent-flow-detail" aria-label="Prompt flusso selezionato">
-              <div class="agent-flow-detail-header">
-                <div>
-                  <p class="eyebrow">Prompt flusso</p>
-                  <strong id="agentFlowPromptTitle">Flusso attivo</strong>
-                </div>
-                <button class="ghost-action danger compact" id="clearAgentPromptButton" type="button">
-                  <svg><use href="#icon-trash"></use></svg>
-                  Elimina prompt
-                </button>
-              </div>
-              <label class="field">
-                <span>Prompt agente</span>
-                <textarea id="nodePromptInput" rows="12"></textarea>
-              </label>
-              <div class="agent-flow-detail-actions">
-                <button class="primary-action compact" id="regenerateAgentFlowButton" type="button">
-                  <svg><use href="#icon-zap"></use></svg>
-                  Rigenera flusso
-                </button>
-                <button class="secondary-action compact" id="runAgentFlowFromPromptButton" type="button">
-                  <svg><use href="#icon-play"></use></svg>
-                  Simula
-                </button>
-              </div>
-            </section>
           </div>
 
           <div class="tab-panel" id="toolsPanel">
@@ -498,28 +527,30 @@
       <form id="flowCrudForm" class="crud-form">
         <div class="crud-dialog-header">
           <div>
-            <p class="eyebrow">CRUD flussi</p>
-            <h2 id="flowCrudTitle">Nuovo flusso</h2>
+            <p class="eyebrow">CRUD agenti</p>
+            <h2 id="flowCrudTitle">Nuovo agente</h2>
           </div>
           <button class="icon-button small" id="closeFlowDialogButton" type="button" aria-label="Chiudi finestra">
             <svg><use href="#icon-stop"></use></svg>
           </button>
         </div>
         <div class="crud-grid">
-          <label class="field"><span>Nome flusso</span><input id="flowCrudName" type="text" required /></label>
+          <label class="field"><span>Nome agente</span><input id="flowCrudName" type="text" required /></label>
           <label class="field"><span>Cartella</span><select id="flowCrudFolder"></select></label>
-          <label class="field"><span>Categoria operativa</span><input id="flowCrudCategory" type="text" placeholder="Prenotazioni, Accessi, Compliance..." /></label>
-          <label class="field"><span>Trigger</span><input id="flowCrudTrigger" type="text" placeholder="webhook.eventName" /></label>
+          <label class="field"><span>Categoria agente</span><input id="flowCrudCategory" type="text" placeholder="Prenotazioni, Accessi, Compliance..." /></label>
+          <label class="field"><span>Trigger principale</span><input id="flowCrudTrigger" type="text" placeholder="webhook.eventName" /></label>
           <label class="field"><span>Livello</span><select id="flowCrudLevel"><option>Core</option><option>Avanzato</option></select></label>
-          <label class="field wide"><span>Sintesi</span><textarea id="flowCrudSummary" rows="4" placeholder="Descrivi lo scopo operativo del flusso"></textarea></label>
+          <label class="field"><span>Tag</span><input id="flowCrudTags" type="text" placeholder="prenotazioni, accessi, recovery" /></label>
+          <label class="field wide"><span>Tool disponibili</span><textarea id="flowCrudTools" rows="3" placeholder="access.createSmartLockLink, pms.addTimelineNote"></textarea></label>
+          <label class="field wide"><span>Descrizione agente</span><textarea id="flowCrudSummary" rows="4" placeholder="Descrivi responsabilita, contesto e confini dell'agente"></textarea></label>
         </div>
         <div class="crud-hint">
-          <strong>Creazione da zero</strong>
-          <span>Il nuovo flusso parte con trigger, agente e outcome vuoti da configurare nel canvas.</span>
+          <strong>Agente operativo</strong>
+          <span>Ogni agente puo creare, duplicare, rigenerare ed eliminare uno o piu workflow.</span>
         </div>
         <div class="crud-actions">
           <button class="ghost-action" id="cancelFlowCrudButton" type="button">Annulla</button>
-          <button class="primary-action" type="submit">Salva flusso</button>
+          <button class="primary-action" type="submit">Salva agente</button>
         </div>
       </form>
     </dialog>
@@ -541,7 +572,7 @@
         </div>
         <div class="crud-hint">
           <strong>Cartelle e sottocartelle</strong>
-          <span>Usale per organizzare i flussi senza cambiare la struttura tecnica dei nodi.</span>
+          <span>Usale per organizzare agenti e sotto-team senza cambiare i workflow gia salvati.</span>
         </div>
         <div class="crud-actions">
           <button class="ghost-action" id="cancelFolderCrudButton" type="button">Annulla</button>

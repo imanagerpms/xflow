@@ -2,6 +2,7 @@ const iconByType = {
   trigger: "icon-zap",
   agent: "icon-bot",
   tool: "icon-tool",
+  action: "icon-bot",
   message: "icon-mail",
   guardrail: "icon-shield",
   human_task: "icon-shield",
@@ -11,15 +12,16 @@ const iconByType = {
 };
 
 const typeLabels = {
-  trigger: "Trigger",
-  agent: "Agente AI",
+  trigger: "Trigger event",
+  agent: "Agent block",
   tool: "Tool call",
-  message: "Messaggio",
-  guardrail: "Guardrail",
-  human_task: "Task umano",
-  decision: "Decisione",
+  action: "Action block",
+  message: "Action block",
+  guardrail: "Check block",
+  human_task: "Human task",
+  decision: "Check block",
   outcome: "Outcome",
-  terminal: "Terminale",
+  terminal: "Stato terminale",
 };
 
 const paletteItems = [
@@ -29,24 +31,29 @@ const paletteItems = [
     description: "Webhook gestionale, CRM, form o dispositivo.",
   },
   {
-    type: "agent",
-    title: "Agente unico",
-    description: "Prompt operativo che descrive e genera il flow.",
-  },
-  {
     type: "tool",
     title: "Tool call",
     description: "Azione su gestionale, pagamenti, accessi o CRM.",
   },
   {
-    type: "message",
-    title: "Invio cliente",
-    description: "WhatsApp, email, SMS o portale cliente.",
+    type: "guardrail",
+    title: "Check block",
+    description: "Controlli che determinano il percorso successivo.",
   },
   {
-    type: "guardrail",
-    title: "Controllo",
-    description: "Regole di sicurezza, privacy e approvazione.",
+    type: "action",
+    title: "Action block",
+    description: "Azione interna dell'agente senza provider esterno.",
+  },
+  {
+    type: "human_task",
+    title: "Human task",
+    description: "Apre un task Operations quando serve attenzione umana.",
+  },
+  {
+    type: "outcome",
+    title: "Outcome",
+    description: "Stato terminale con success contract verificabile.",
   },
 ];
 
@@ -66,6 +73,31 @@ const bookingFolderTools = [
     params: { to: "{{guest.email}}", subject: "{{email.subject}}", body: "{{email.body}}" },
   },
 ];
+
+const agentGeneratorModels = [
+  {
+    id: "gpt-5.4-mini",
+    label: "ChatGPT 5.4 mini",
+    description: "Default rapido per generare diagrammi operativi modificabili.",
+  },
+  {
+    id: "gpt-5.5",
+    label: "GPT-5.5",
+    description: "Modello piu recente indicato dalla documentazione OpenAI.",
+  },
+  {
+    id: "gpt-5.4",
+    label: "GPT-5.4",
+    description: "Generazione piu ampia per workflow complessi.",
+  },
+  {
+    id: "gpt-5.4-thinking",
+    label: "GPT-5.4 Thinking",
+    description: "Pianificazione piu profonda per casi ad alta criticita.",
+  },
+];
+
+const defaultAgentGeneratorModel = "gpt-5.4-mini";
 
 const flows = [
   {
@@ -974,6 +1006,8 @@ const state = {
   activeBusinessId: defaultBusinessId,
   currentFlowId: null,
   selectedNodeId: null,
+  selectedWorkflowVariantId: null,
+  agentGeneratorModel: defaultAgentGeneratorModel,
   activeTab: "config",
   sidebarTab: "flows",
   runtimeTerminalOpen: false,
@@ -1051,6 +1085,11 @@ function cacheElements() {
   els.flowTitle = document.querySelector("#flowTitle");
   els.flowCategory = document.querySelector("#flowCategory");
   els.flowMeta = document.querySelector("#flowMeta");
+  els.workflowCore = document.querySelector("#workflowCore");
+  els.agentModelSelect = document.querySelector("#agentModelSelect");
+  els.agentGeneratorStatus = document.querySelector("#agentGeneratorStatus");
+  els.workflowTabActiveName = document.querySelector("#workflowTabActiveName");
+  els.workflowTabModelName = document.querySelector("#workflowTabModelName");
   els.flowCanvas = document.querySelector("#flowCanvas");
   els.connectorLayer = document.querySelector("#connectorLayer");
   els.eventLog = document.querySelector("#eventLog");
@@ -1078,6 +1117,8 @@ function cacheElements() {
   els.flowCrudCategory = document.querySelector("#flowCrudCategory");
   els.flowCrudTrigger = document.querySelector("#flowCrudTrigger");
   els.flowCrudLevel = document.querySelector("#flowCrudLevel");
+  els.flowCrudTags = document.querySelector("#flowCrudTags");
+  els.flowCrudTools = document.querySelector("#flowCrudTools");
   els.flowCrudSummary = document.querySelector("#flowCrudSummary");
   els.closeFlowDialogButton = document.querySelector("#closeFlowDialogButton");
   els.cancelFlowCrudButton = document.querySelector("#cancelFlowCrudButton");
@@ -1095,6 +1136,10 @@ function cacheElements() {
   els.inspectorEmpty = document.querySelector("#inspectorEmpty");
   els.nodeNameInput = document.querySelector("#nodeNameInput");
   els.nodeDescriptionInput = document.querySelector("#nodeDescriptionInput");
+  els.agentCategoryField = document.querySelector("#agentCategoryField");
+  els.agentTagsField = document.querySelector("#agentTagsField");
+  els.agentCategoryInput = document.querySelector("#agentCategoryInput");
+  els.agentTagsInput = document.querySelector("#agentTagsInput");
   els.nodeConditionInput = document.querySelector("#nodeConditionInput");
   els.nodePromptInput = document.querySelector("#nodePromptInput");
   els.agentFlowPromptTitle = document.querySelector("#agentFlowPromptTitle");
@@ -1165,6 +1210,11 @@ function bindEvents() {
   els.newFlowButton.addEventListener("click", () => openFlowCrudDialog("create"));
   els.generateAgentFlowButton?.addEventListener("click", generateFlowFromSelectedAgentPrompt);
   els.regenerateAgentFlowButton?.addEventListener("click", regenerateActiveAgentFlowVariant);
+  els.agentModelSelect?.addEventListener("change", () => {
+    state.agentGeneratorModel = getValidAgentGeneratorModel(els.agentModelSelect.value);
+    renderAgentGeneratorModelControls();
+    persistState();
+  });
   els.agentFlowVariantSelect?.addEventListener("change", activateSelectedAgentFlowVariant);
   els.agentFlowVariantList?.addEventListener("click", handleAgentFlowListClick);
   els.renameAgentFlowVariantButton?.addEventListener("click", renameActiveAgentFlowVariant);
@@ -1285,25 +1335,48 @@ function bindEvents() {
     ["nodeToolInput", "tool"],
   ].forEach(([elementKey, field]) => {
     els[elementKey].addEventListener("input", (event) => {
-      const node = getSelectedNode();
+      const flow = getCurrentFlow();
+      const node = field === "prompt" ? getAgentNode(flow) : getSelectedNode();
       if (!node) return;
       node[field] = event.target.value;
+      if (node.type === "agent" && flow) {
+        if (field === "name") flow.agentName = event.target.value;
+        if (field === "description") flow.agentDescription = event.target.value;
+      }
       renderCanvas();
       renderFlowList();
       if (field === "prompt" && els.generateAgentFlowButton) {
         els.generateAgentFlowButton.disabled = node.type !== "agent" || !event.target.value.trim();
       }
       if (field === "prompt" && els.runAgentFlowButton) {
-        els.runAgentFlowButton.disabled = !getCurrentFlow()?.nodes.length;
+        els.runAgentFlowButton.disabled = !getActiveAgentFlowVariant();
       }
       if (field === "prompt" && els.clearAgentPromptButton) {
         els.clearAgentPromptButton.disabled = node.type !== "agent" || !event.target.value.trim();
       }
       if (field === "prompt" && node.type === "agent") {
         saveActiveAgentFlowVariant(getCurrentFlow());
-        renderAgentFlowVariantControls(node);
+        renderAgentFlowVariantControls();
       }
     });
+  });
+
+  els.agentCategoryInput?.addEventListener("input", (event) => {
+    const flow = getCurrentFlow();
+    const node = getSelectedNode();
+    if (!flow || node?.type !== "agent") return;
+    flow.agentCategory = event.target.value;
+    flow.category = event.target.value || flow.category;
+    renderCanvasHeader();
+    renderFlowList();
+  });
+
+  els.agentTagsInput?.addEventListener("input", (event) => {
+    const flow = getCurrentFlow();
+    const node = getSelectedNode();
+    if (!flow || node?.type !== "agent") return;
+    flow.agentTags = parseDelimitedList(event.target.value);
+    renderFlowList();
   });
 
   els.nodeParamsInput.addEventListener("input", (event) => {
@@ -1641,10 +1714,13 @@ function renderAll() {
   renderCockpit();
   renderCompanyTitle();
   renderSidebarTabs();
-  setRuntimeTerminalVisible(state.runtimeTerminalVisible);
-  setRuntimeTerminalOpen(state.runtimeTerminalOpen);
+  const runtimeActive = state.runtimeRun && !["completed", "partially_completed", "failed", "cancelled"].includes(state.runtimeRun.status);
+  const runtimeVisible = ["studio", "simulator"].includes(state.activeView) && runtimeActive;
+  setRuntimeTerminalVisible(runtimeVisible);
+  setRuntimeTerminalOpen(runtimeVisible && state.runtimeTerminalOpen);
   renderFlowList();
   renderPalette();
+  renderAgentGeneratorModelControls();
   renderCanvasHeader();
   renderCanvas();
   renderInspector();
@@ -1652,7 +1728,7 @@ function renderAll() {
   renderEditorAvailability();
   renderScenarioControls();
   renderRuntimeSurfaces();
-  renderLog(["Seleziona un flusso o avvia una simulazione per vedere gli step runtime."]);
+  renderLog(["Seleziona un agente o avvia una simulazione per vedere gli step runtime."]);
   setRuntimeStatus("ready", "Pronto");
 }
 
@@ -1709,9 +1785,113 @@ function ensureFlowOrganization() {
   const folderIds = new Set(state.flowFolders.map((folder) => folder.id));
   flows.forEach((flow) => {
     if (!flow.folderId || !folderIds.has(flow.folderId)) flow.folderId = getDefaultFolderIdForGroup(flow.group);
+    normalizeAgentMetadata(flow);
     applyBookingFolderTools(flow);
+    ensureBaseWorkflowVariant(flow);
   });
   if (state.selectedFolderId && !folderIds.has(state.selectedFolderId)) state.selectedFolderId = null;
+}
+
+function normalizeAgentMetadata(flow) {
+  if (!flow) return;
+  const agent = getAgentNode(flow);
+  flow.agentName ||= agent?.name || `Agente ${flow.name}`;
+  flow.agentDescription ||= agent?.description || flow.summary || "Agente operativo responsabile dei workflow assegnati.";
+  flow.agentCategory ||= flow.category || "Hospitality operations";
+  if (!Array.isArray(flow.agentTags) || flow.agentTags.length === 0) flow.agentTags = deriveAgentTags(flow);
+  const tools = getAgentTools(flow);
+  if (!Array.isArray(flow.availableTools) || flow.availableTools.length === 0) flow.availableTools = tools;
+  if (agent) {
+    agent.name ||= flow.agentName;
+    agent.description ||= flow.agentDescription;
+    agent.tools = mergeToolDefinitions(flow.availableTools || [], Array.isArray(agent.tools) ? agent.tools : []);
+    agent.params = {
+      ...(agent.params || {}),
+      available_tools: agent.tools.map((tool) => tool.function),
+    };
+  }
+}
+
+function getAgentNode(flow = getCurrentFlow()) {
+  return flow?.nodes?.find((node) => node.type === "agent") || null;
+}
+
+function getAgentProfile(flow = getCurrentFlow()) {
+  if (!flow) return null;
+  const agent = getAgentNode(flow);
+  const tools = getAgentTools(flow);
+  const variants = Array.isArray(flow.generatedFlowVariants) ? flow.generatedFlowVariants : [];
+  return {
+    name: flow.agentName || agent?.name || `Agente ${flow.name}`,
+    description: flow.agentDescription || agent?.description || flow.summary || "Agente operativo responsabile dei workflow assegnati.",
+    category: flow.agentCategory || flow.category || "Hospitality operations",
+    tags: Array.isArray(flow.agentTags) ? flow.agentTags : deriveAgentTags(flow),
+    prompt: agent?.prompt || "",
+    tools,
+    workflowCount: Math.max(variants.length || 0, flow.nodes?.length ? 1 : 0),
+    activeWorkflowName: getActiveAgentFlowVariant(flow)?.name || flow.name,
+  };
+}
+
+function deriveAgentTags(flow) {
+  const groupLabel = getBusinessGroups().find((group) => group.id === flow.group)?.label;
+  const toolNames = getAgentTools(flow).map((tool) => tool.function?.split(".")[0]).filter(Boolean);
+  return parseDelimitedList([
+    flow.category,
+    groupLabel,
+    flow.level,
+    flow.trigger?.split(".")[0],
+    ...toolNames,
+  ].filter(Boolean).join(", ")).slice(0, 6);
+}
+
+function getAgentTools(flow = getCurrentFlow()) {
+  if (!flow) return [];
+  const agent = getAgentNode(flow);
+  const agentTools = Array.isArray(agent?.tools) ? agent.tools : [];
+  const availableTools = Array.isArray(flow.availableTools) ? flow.availableTools : [];
+  const nodeTools = (flow.nodes || [])
+    .filter((node) => node.tool)
+    .map((node) => ({
+      function: node.tool,
+      label: node.name || labelFromTool(node.tool),
+      purpose: node.description || "Tool operativo configurato nel workflow.",
+      critical: node.type === "tool" || node.type === "human_task",
+      params: node.params || {},
+    }));
+  return mergeToolDefinitions([...availableTools, ...agentTools], nodeTools);
+}
+
+function ensureBaseWorkflowVariant(flow) {
+  if (!flow || Array.isArray(flow.generatedFlowVariants) || !Array.isArray(flow.nodes) || flow.nodes.length === 0) return;
+  const baseVariant = {
+    id: "variant-base",
+    name: flow.name || "Workflow base",
+    createdAt: flow.updatedAt || null,
+    summary: flow.summary,
+    trigger: flow.trigger,
+    businessGoal: flow.businessGoal,
+    availableTools: structuredClone(flow.availableTools || []),
+    metrics: structuredClone(flow.metrics || {}),
+    nodes: structuredClone(flow.nodes || []),
+    edges: structuredClone(flow.edges || []),
+    simulationOrder: structuredClone(flow.simulationOrder || []),
+  };
+  flow.generatedFlowVariants = [baseVariant];
+  flow.activeGeneratedFlowId = baseVariant.id;
+}
+
+function createToolDefinitionsFromNames(toolNames = [], options = {}) {
+  const names = parseDelimitedList(toolNames);
+  const source = names.length ? names : [options.defaultFunction || "ops.runTool"];
+  return source.map((toolName, index) => ({
+    function: toolName,
+    label: index === 0 && options.defaultLabel ? options.defaultLabel : labelFromTool(toolName),
+    purpose: index === 0 && options.defaultPurpose ? options.defaultPurpose : "Tool operativo disponibile all'agente.",
+    critical: true,
+    failureRoute: options.fallbackRoute || null,
+    params: { booking_id: "{{booking.id}}", dry_run: false },
+  }));
 }
 
 function applyBookingFolderTools(flow) {
@@ -1807,7 +1987,7 @@ function renderCompanyTitle() {
   if (els.companyType) els.companyType.textContent = business.type || "Hospitality";
   if (els.companyName) els.companyName.textContent = business.name || "Costa dell'Ovest";
   if (els.companyDescription) els.companyDescription.textContent = `Gestisce ${propertyLabel}`;
-  if (els.flowBrowserTitle) els.flowBrowserTitle.textContent = `Playbook ${business.type}`;
+  if (els.flowBrowserTitle) els.flowBrowserTitle.textContent = `Agenti ${business.type}`;
 }
 
 function setActiveBusiness(businessId) {
@@ -1816,6 +1996,7 @@ function setActiveBusiness(businessId) {
   state.activeBusinessId = businessId;
   state.currentFlowId = null;
   state.selectedNodeId = null;
+  state.selectedWorkflowVariantId = null;
   state.nodeStatuses = {};
   state.activeEdges = new Set();
   state.closedGroups = new Set(getBusinessGroups().map((group) => group.id));
@@ -1837,7 +2018,7 @@ function getCurrentFlow() {
 function getSelectedNode() {
   const flow = getCurrentFlow();
   if (!flow) return null;
-  return flow.nodes.find((node) => node.id === state.selectedNodeId) || flow.nodes[0];
+  return flow.nodes.find((node) => node.id === state.selectedNodeId) || null;
 }
 
 function renderFlowList() {
@@ -1862,7 +2043,7 @@ function renderFlowList() {
   if (matchCount === 0) {
     const empty = document.createElement("div");
     empty.className = "flow-empty-state";
-    empty.innerHTML = `<strong>Nessun flusso trovato</strong><span>Prova con un nome, un trigger, un tool o una frase del prompt.</span>`;
+    empty.innerHTML = `<strong>Nessun agente trovato</strong><span>Prova con nome, categoria, tag, prompt, trigger o tool.</span>`;
     els.flowList.appendChild(empty);
   }
   renderFlowManagerActions();
@@ -1889,9 +2070,9 @@ function renderFolderTree(folder, matchedIds, visibleFlows, query, depth) {
   toggle.setAttribute("aria-expanded", String(isOpen));
   toggle.setAttribute("aria-controls", `flow-folder-${folder.id}`);
   toggle.innerHTML = `
-    <span class="flow-group-copy">
-      <span class="folder-title-line"><svg><use href="#icon-folder"></use></svg><strong>${escapeHtml(folder.name)}</strong></span>
-      <small>${escapeHtml(folder.description || getFolderPath(folder.id).join(" / ") || "Cartella flussi")}</small>
+      <span class="flow-group-copy">
+        <span class="folder-title-line"><svg><use href="#icon-folder"></use></svg><strong>${escapeHtml(folder.name)}</strong></span>
+      <small>${escapeHtml(folder.description || getFolderPath(folder.id).join(" / ") || "Cartella agenti")}</small>
     </span>
     <span class="flow-group-actions">
       ${folder.system ? `<span class="folder-system-pill">base</span>` : ""}
@@ -1913,16 +2094,24 @@ function renderFolderTree(folder, matchedIds, visibleFlows, query, depth) {
 }
 
 function renderFlowCard(flow) {
+  const profile = getAgentProfile(flow);
+  const workflowLabel = profile.workflowCount === 1 ? "1 workflow" : `${profile.workflowCount} workflow`;
+  const toolLabel = profile.tools.length === 1 ? "1 tool" : `${profile.tools.length} tool`;
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `flow-card ${flow.id === state.currentFlowId ? "active" : ""}`;
+  button.className = `flow-card agent-card ${flow.id === state.currentFlowId ? "active" : ""}`;
   button.innerHTML = `
     <div class="flow-card-header">
-      <strong>${escapeHtml(flow.name)}</strong>
+      <strong>${escapeHtml(profile.name)}</strong>
       <span class="flow-level ${flow.level === "Avanzato" ? "is-advanced" : ""}">${escapeHtml(flow.level || "Core")}</span>
     </div>
-    <span class="flow-chip">${escapeHtml(flow.category || "Da classificare")}</span>
-    <p>${escapeHtml(flow.summary || "Flusso da configurare.")}</p>
+    <span class="flow-chip">${escapeHtml(profile.category || "Da classificare")}</span>
+    <p>${escapeHtml(profile.description || "Agente da configurare.")}</p>
+    <div class="agent-card-meta">
+      <span>${escapeHtml(workflowLabel)}</span>
+      <span>${escapeHtml(toolLabel)}</span>
+    </div>
+    <div class="agent-tag-row">${profile.tags.slice(0, 4).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
   `;
   button.addEventListener("click", () => selectFlow(flow.id));
   return button;
@@ -1933,7 +2122,7 @@ function renderLooseFlowSection(looseFlows) {
   section.className = "flow-group flow-folder is-open";
   section.innerHTML = `
     <div class="flow-group-toggle static">
-      <span class="flow-group-copy"><strong>Senza cartella</strong><small>Flussi da riorganizzare</small></span>
+      <span class="flow-group-copy"><strong>Senza cartella</strong><small>Agenti da riorganizzare</small></span>
       <span class="flow-group-count">${looseFlows.length}</span>
     </div>
   `;
@@ -1952,7 +2141,13 @@ function countFlowsInFolder(folderId, flowCollection = getVisibleFlows()) {
 
 function flowMatchesSearch(flow, query) {
   if (!query) return true;
+  const profile = getAgentProfile(flow);
   const haystack = [
+    profile?.name,
+    profile?.description,
+    profile?.category,
+    ...(profile?.tags || []),
+    ...(profile?.tools || []).flatMap((tool) => [tool.function, tool.label, tool.purpose]),
     flow.name,
     flow.category,
     flow.level,
@@ -2011,13 +2206,16 @@ function openFlowCrudDialog(mode) {
   const flow = mode === "edit" ? getCurrentFlow() : null;
   if (mode === "edit" && !flow) return;
   ensureFlowOrganization();
-  if (els.flowCrudTitle) els.flowCrudTitle.textContent = mode === "edit" ? "Modifica flusso" : "Nuovo flusso da zero";
+  const profile = flow ? getAgentProfile(flow) : null;
+  if (els.flowCrudTitle) els.flowCrudTitle.textContent = mode === "edit" ? "Modifica agente" : "Nuovo agente";
   renderFolderSelectOptions(els.flowCrudFolder, flow?.folderId || state.selectedFolderId || getDefaultFolderIdForGroup(flow?.group || getBusinessGroups()[0]?.id));
-  els.flowCrudName.value = flow?.name || "";
-  els.flowCrudCategory.value = flow?.category || "";
+  els.flowCrudName.value = profile?.name || "";
+  els.flowCrudCategory.value = profile?.category || "";
   els.flowCrudTrigger.value = flow?.trigger || "";
   els.flowCrudLevel.value = flow?.level || "Core";
-  els.flowCrudSummary.value = flow?.summary || "";
+  if (els.flowCrudTags) els.flowCrudTags.value = (profile?.tags || []).join(", ");
+  if (els.flowCrudTools) els.flowCrudTools.value = (profile?.tools || []).map((tool) => tool.function).filter(Boolean).join(", ");
+  els.flowCrudSummary.value = profile?.description || flow?.summary || "";
   openCrudDialog(els.flowCrudDialog);
   els.flowCrudName.focus();
 }
@@ -2025,14 +2223,16 @@ function openFlowCrudDialog(mode) {
 function submitFlowCrudForm(event) {
   event.preventDefault();
   const name = els.flowCrudName.value.trim();
-  if (!name) return showToast("Inserisci un nome per il flusso.");
+  if (!name) return showToast("Inserisci un nome per l'agente.");
   const data = {
     name,
     folderId: els.flowCrudFolder.value || null,
     category: els.flowCrudCategory.value.trim() || "Da classificare",
     trigger: els.flowCrudTrigger.value.trim() || "manual.start",
     level: els.flowCrudLevel.value || "Core",
-    summary: els.flowCrudSummary.value.trim() || "Flusso creato da zero, da completare con nodi e policy operative.",
+    tags: parseDelimitedList(els.flowCrudTags?.value || ""),
+    tools: parseDelimitedList(els.flowCrudTools?.value || ""),
+    summary: els.flowCrudSummary.value.trim() || "Agente creato da zero, da completare con prompt, tool e workflow.",
   };
   if (state.flowDialogMode === "edit") updateCurrentFlowMetadata(data);
   else createFlowFromScratch(data);
@@ -2045,35 +2245,36 @@ function createFlowFromScratch(data) {
   const flowId = uniqueFlowId(data.name);
   const triggerId = `${flowId}-trigger`;
   const agentId = `${flowId}-agent`;
+  const checkId = `${flowId}-check`;
   const toolId = `${flowId}-tool`;
+  const actionId = `${flowId}-action`;
   const taskId = `${flowId}-imanager-task`;
   const outcomeId = `${flowId}-outcome`;
   const businessGoal = `completare manualmente o automaticamente: ${data.summary}`;
   const taskDefinition = {
     title: `Completare manualmente: ${data.name}`,
     objective: businessGoal,
-    tasklist: "iManager",
+    tasklist: "Operations",
     priority: "media",
     requiredContext: ["booking_id", "guest_contact", "unit_id", "errore_o_motivo_escalation"],
     instructions: [
-      "Raggiungere manualmente lo stesso obiettivo operativo del flusso.",
+      "Raggiungere manualmente lo stesso obiettivo operativo del workflow.",
       "Usare solo i dati minimi presenti nel task.",
       "Registrare esito ed evidenza nella timeline operativa.",
     ],
     privacy: "Non includere dati personali o log tecnici non necessari al completamento del task.",
   };
+  const configuredTools = createToolDefinitionsFromNames(data.tools, {
+    fallbackRoute: taskId,
+    defaultFunction: "ops.runTool",
+    defaultLabel: "Tool operativo da configurare",
+    defaultPurpose: "Esegue l'azione principale del workflow quando policy e dati sono validi.",
+  });
   const agentTools = [
+    ...configuredTools,
     {
-      function: "ops.runTool",
-      label: "Tool operativo da configurare",
-      purpose: "Esegue l'azione principale del flusso quando policy e dati sono validi.",
-      critical: true,
-      failureRoute: taskId,
-      params: { booking_id: "{{booking.id}}", dry_run: false },
-    },
-    {
-      function: "imanager.createTask",
-      label: "Crea task iManager",
+      function: "operations.createTask",
+      label: "Crea task Operations",
       purpose: "Apre un task manuale per ogni fallback, escalation o failure definitiva.",
       critical: true,
       params: taskDefinition,
@@ -2085,6 +2286,11 @@ function createFlowFromScratch(data) {
     group: groupId,
     folderId: data.folderId,
     name: data.name,
+    agentName: data.name,
+    agentDescription: data.summary,
+    agentCategory: data.category,
+    agentTags: data.tags,
+    availableTools: structuredClone(agentTools),
     category: data.category,
     summary: data.summary,
     trigger: data.trigger,
@@ -2093,12 +2299,15 @@ function createFlowFromScratch(data) {
     agentMode: "single_responsible_agent",
     businessGoal,
     metrics: { sla: "Da definire", risk: "Da valutare", agenti: "1 agente", automations: `${agentTools.length} tool` },
-    simulationOrder: [triggerId, agentId, toolId, taskId, outcomeId],
+    simulationOrder: [triggerId, agentId, checkId, toolId, actionId, taskId, outcomeId],
     edges: [
       { from: triggerId, to: agentId, outcome: "evento_validato" },
-      { from: agentId, to: toolId, outcome: "azione_tool" },
-      { from: agentId, to: taskId, outcome: "fallback_o_escalation" },
-      { from: toolId, to: outcomeId, outcome: "tool_ok" },
+      { from: agentId, to: checkId, outcome: "piano_pronto" },
+      { from: checkId, to: toolId, outcome: "policy_ok" },
+      { from: checkId, to: taskId, outcome: "needs_human" },
+      { from: toolId, to: actionId, outcome: "tool_ok" },
+      { from: toolId, to: taskId, outcome: "tool_failure" },
+      { from: actionId, to: outcomeId, outcome: "azione_interna_ok" },
       { from: taskId, to: outcomeId, outcome: "completato_manualmente" },
     ],
     nodes: [
@@ -2108,7 +2317,7 @@ function createFlowFromScratch(data) {
         x: 42,
         y: 240,
         name: "Trigger iniziale",
-        description: "Definisci l'evento che avvia il flusso.",
+        description: "Definisci l'evento che avvia il workflow.",
         condition: data.trigger,
         params: { event: data.trigger, source: "manuale" },
         guardrail: "Non prosegue se il payload minimo non è stato definito.",
@@ -2118,56 +2327,81 @@ function createFlowFromScratch(data) {
         type: "agent",
         x: 330,
         y: 190,
-        name: "Agente operativo",
-        description: "Responsabile unico del flusso: interpreta il trigger, usa i tool disponibili e apre task iManager quando serve intervento umano.",
+        name: data.name,
+        description: data.summary,
         condition: "Dati minimi disponibili",
         businessGoal,
-        capability: "manage_flow_with_tools_and_imanager_fallback",
+        capability: "manage_workflow_with_tools_and_operations_fallback",
         prompt: defaultAgentPrompt(),
         tools: agentTools,
         taskTemplates: [taskDefinition],
         policy: {
           checks: ["dati_minimi", "policy", "autorizzazione", "success_contract"],
-          escalationRule: "Ogni fallback o escalation crea sempre un task iManager.",
+          escalationRule: "Ogni fallback o escalation crea sempre un task Operations.",
           taskDataRule: "Il task contiene solo informazioni necessarie al completamento manuale dell'obiettivo.",
         },
         params: {
           available_tools: agentTools.map((tool) => tool.function),
-          imanager_task_policy: taskDefinition,
+          operations_task_policy: taskDefinition,
         },
         fallbackPlaybook: [
-          "Creare task iManager quando il tool principale fallisce definitivamente.",
-          "Creare task iManager quando serve autorizzazione o verifica manuale.",
-          "Creare task iManager quando mancano dati indispensabili al success contract.",
+          "Creare task Operations quando il tool principale fallisce definitivamente.",
+          "Creare task Operations quando serve autorizzazione o verifica manuale.",
+          "Creare task Operations quando mancano dati indispensabili al success contract.",
         ],
-        guardrail: "Ogni fallback operativo apre un task iManager con obiettivo, dati minimi, evidenza richiesta e scadenza.",
+        guardrail: "Ogni fallback operativo apre un task Operations con obiettivo, dati minimi, evidenza richiesta e scadenza.",
+      },
+      {
+        id: checkId,
+        type: "guardrail",
+        x: 620,
+        y: 112,
+        name: "Check policy e dati",
+        description: "Controlla payload, autorizzazioni, privacy, dati minimi e success contract prima di eseguire tool o task.",
+        condition: "payload.valid && policy.status == 'pass'",
+        params: {
+          checks: ["payload_minimo", "policy", "autorizzazione", "privacy", "success_contract"],
+          failure_route: taskId,
+        },
+        guardrail: "Quando il controllo non passa, l'agente apre un task Operations invece di forzare il tool.",
       },
       {
         id: toolId,
         type: "tool",
-        x: 620,
+        x: 900,
         y: 112,
         name: "Tool operativo",
-        description: "Intervento dell'agente: collega qui la funzione principale del flusso.",
-        condition: "agent.policy == 'pass'",
-        tool: "ops.runTool",
+        description: "Intervento dell'agente: collega qui la funzione principale del workflow.",
+        condition: "check.status == 'pass'",
+        tool: configuredTools[0]?.function || "ops.runTool",
         agentIntervention: true,
         agentId,
         agentLabel: "Agente operativo",
         params: { booking_id: "{{booking.id}}", dry_run: false },
-        guardrail: "Timeout o failure definitiva aprono un task iManager.",
+        guardrail: "Timeout o failure definitiva aprono un task Operations.",
+      },
+      {
+        id: actionId,
+        type: "action",
+        x: 900,
+        y: 360,
+        name: "Action block interno",
+        description: "Azione interna dell'agente: aggiorna memoria operativa, prepara comunicazione o consolida evidenze senza side effect esterni.",
+        condition: "tool.status == 'succeeded'",
+        params: { write_audit_note: true, update_agent_memory: false },
+        guardrail: "Non marca il workflow completo finche il success contract non e verificato.",
       },
       {
         id: taskId,
         type: "human_task",
         x: 620,
-        y: 360,
-        name: "Task iManager fallback",
+        y: 390,
+        name: "Task Operations fallback",
         description: "Intervento dell'agente: task manuale con solo l'obiettivo da raggiungere e il contesto minimo.",
         condition: "fallback || escalation || tool.failure || policy.needs_human",
         businessGoal,
         capability: "create_minimal_human_task",
-        tool: "imanager.createTask",
+        tool: "operations.createTask",
         agentIntervention: true,
         agentId,
         agentLabel: "Agente operativo",
@@ -2179,7 +2413,7 @@ function createFlowFromScratch(data) {
       {
         id: outcomeId,
         type: "outcome",
-        x: 910,
+        x: 1180,
         y: 240,
         name: "Outcome verificato",
         description: "Stato terminale esplicito da validare con success contract.",
@@ -2193,19 +2427,20 @@ function createFlowFromScratch(data) {
   flows.unshift(flow);
   state.deletedFlowIds.delete(flow.id);
   state.currentFlowId = flow.id;
-  state.selectedNodeId = agentId;
+  state.selectedNodeId = null;
+  state.selectedWorkflowVariantId = null;
   state.selectedFolderId = data.folderId;
   if (data.folderId) state.closedFolderIds.delete(data.folderId);
   persistState();
-  showToast("Flusso creato con un agente responsabile, tool e task iManager di fallback.");
+  showToast("Agente creato con workflow base, tool, check e task Operations di fallback.");
   renderAll();
 }
 
 function generateFlowFromSelectedAgentPrompt() {
   const sourceFlow = getCurrentFlow();
-  const sourceAgent = getSelectedNode();
+  const sourceAgent = getAgentNode(sourceFlow);
   const prompt = String(els.nodePromptInput?.value || sourceAgent?.prompt || "").trim();
-  if (!sourceFlow || sourceAgent?.type !== "agent" || !prompt) {
+  if (!sourceFlow || !sourceAgent || !prompt) {
     showToast("Seleziona un agente AI con prompt compilato.");
     return;
   }
@@ -2216,10 +2451,11 @@ function generateFlowFromSelectedAgentPrompt() {
   const variant = createAgentFlowVariant(sourceFlow, generatedFlow);
   sourceFlow.generatedFlowVariants = Array.isArray(sourceFlow.generatedFlowVariants) ? sourceFlow.generatedFlowVariants : [];
   sourceFlow.generatedFlowVariants.push(variant);
+  state.selectedWorkflowVariantId = variant.id;
   sourceFlow.activeGeneratedFlowId = variant.id;
   applyAgentFlowVariant(sourceFlow, variant);
   state.currentFlowId = sourceFlow.id;
-  state.selectedNodeId = sourceFlow.nodes.find((node) => node.type === "agent")?.id || sourceFlow.nodes[0]?.id;
+  state.selectedNodeId = null;
   state.selectedFolderId = sourceFlow.folderId;
   if (sourceFlow.folderId) state.closedFolderIds.delete(sourceFlow.folderId);
   setActiveView("studio");
@@ -2228,18 +2464,18 @@ function generateFlowFromSelectedAgentPrompt() {
   if (els.agentFlowVariantNameInput) els.agentFlowVariantNameInput.value = "";
   state.nodeStatuses = {};
   state.activeEdges = new Set();
-  setRuntimeStatus("ready", "Flow creato");
-  renderLog([`Flow attivo creato dal prompt: ${variant.name}`]);
-  showToast(`Nuovo flusso "${variant.name}" creato e impostato come attivo.`);
+  setRuntimeStatus("ready", "Workflow creato");
+  renderLog([`Workflow attivo creato dal prompt: ${variant.name}`]);
+  showToast(`Nuovo workflow "${variant.name}" creato e impostato come attivo.`);
 }
 
 function regenerateActiveAgentFlowVariant() {
   const flow = getCurrentFlow();
-  const sourceAgent = getSelectedNode();
+  const sourceAgent = getAgentNode(flow);
   const variant = getActiveAgentFlowVariant(flow);
   const prompt = String(els.nodePromptInput?.value || sourceAgent?.prompt || "").trim();
-  if (!flow || sourceAgent?.type !== "agent" || !prompt) return showToast("Seleziona un flusso e compila il prompt agente.");
-  if (!variant) return showToast("Crea prima un flusso da rigenerare.");
+  if (!flow || !sourceAgent || !prompt) return showToast("Seleziona un agente e compila il prompt workflow.");
+  if (!variant) return showToast("Crea prima un workflow da rigenerare.");
   stopSimulation(false);
   const blueprint = buildAgentGeneratedFlowBlueprint(prompt, flow, sourceAgent);
   const generatedFlow = createAgentGeneratedFlow(blueprint);
@@ -2249,6 +2485,8 @@ function regenerateActiveAgentFlowVariant() {
   Object.assign(variant, {
     summary: generatedFlow.summary,
     trigger: generatedFlow.trigger,
+    generatorModel: generatedFlow.generatorModel,
+    generatorModelLabel: generatedFlow.generatorModelLabel,
     businessGoal: generatedFlow.businessGoal,
     availableTools: structuredClone(generatedFlow.availableTools || []),
     metrics: structuredClone(generatedFlow.metrics || {}),
@@ -2258,22 +2496,25 @@ function regenerateActiveAgentFlowVariant() {
     updatedAt: new Date().toISOString(),
   });
   applyAgentFlowVariant(flow, variant);
-  state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
+  state.selectedWorkflowVariantId = variant.id;
+  state.selectedNodeId = null;
   setActiveView("studio");
   persistState();
   renderAll();
-  renderLog([`Flow rigenerato dal prompt: ${variant.name}`]);
-  showToast(`Flusso rigenerato: ${variant.name}`);
+  renderLog([`Workflow rigenerato dal prompt: ${variant.name}`]);
+  showToast(`Workflow rigenerato: ${variant.name}`);
 }
 
 function createAgentFlowVariant(sourceFlow, generatedFlow) {
   const customName = els.agentFlowVariantNameInput?.value.trim();
   const variants = Array.isArray(sourceFlow.generatedFlowVariants) ? sourceFlow.generatedFlowVariants : [];
-  const name = customName || `Flusso ${variants.length + 1}`;
+  const name = customName || `Workflow ${variants.length + 1}`;
   return {
     id: uniqueAgentFlowVariantId(sourceFlow, name),
     name,
     createdAt: new Date().toISOString(),
+    generatorModel: generatedFlow.generatorModel,
+    generatorModelLabel: generatedFlow.generatorModelLabel,
     summary: generatedFlow.summary,
     trigger: generatedFlow.trigger,
     businessGoal: generatedFlow.businessGoal,
@@ -2313,8 +2554,6 @@ function handleAgentFlowListClick(event) {
 
 function editAgentFlowVariantPrompt(variantId) {
   activateAgentFlowVariantById(variantId);
-  state.activeTab = "prompt";
-  renderTabs();
   requestAnimationFrame(() => els.nodePromptInput?.focus());
 }
 
@@ -2324,34 +2563,35 @@ function activateAgentFlowVariantById(variantId, flow = getCurrentFlow()) {
   if (!variant) return;
   stopSimulation(false);
   saveActiveAgentFlowVariant(flow);
+  state.selectedWorkflowVariantId = variant.id;
   flow.activeGeneratedFlowId = variant.id;
   applyAgentFlowVariant(flow, variant);
-  state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
-  state.activeTab = "prompt";
+  state.selectedNodeId = null;
+  state.activeTab = "config";
   setActiveView("studio");
   persistState();
   renderAll();
-  renderLog([`Flusso attivo: ${variant.name}`]);
-  showToast(`Flusso attivo: ${variant.name}`);
+  renderLog([`Workflow attivo: ${variant.name}`]);
+  showToast(`Workflow attivo: ${variant.name}`);
 }
 
 function renameActiveAgentFlowVariant(variantId = null) {
   const flow = getCurrentFlow();
   const variant = variantId ? (flow?.generatedFlowVariants || []).find((item) => item.id === variantId) : getActiveAgentFlowVariant(flow);
-  if (!variant) return showToast("Nessun flusso attivo da rinominare.");
-  const name = window.prompt("Nome flusso", variant.name)?.trim();
+  if (!variant) return showToast("Nessun workflow attivo da rinominare.");
+  const name = window.prompt("Nome workflow", variant.name)?.trim();
   if (!name) return;
   variant.name = name;
   variant.updatedAt = new Date().toISOString();
   persistState();
   renderAgentFlowVariantControls();
-  showToast(`Flusso rinominato: ${name}`);
+  showToast(`Workflow rinominato: ${name}`);
 }
 
 function duplicateActiveAgentFlowVariant(variantId = null) {
   const flow = getCurrentFlow();
   const variant = variantId ? (flow?.generatedFlowVariants || []).find((item) => item.id === variantId) : getActiveAgentFlowVariant(flow);
-  if (!flow || !variant) return showToast("Nessun flusso attivo da duplicare.");
+  if (!flow || !variant) return showToast("Nessun workflow attivo da duplicare.");
   saveActiveAgentFlowVariant(flow);
   const clone = structuredClone(variant);
   clone.name = `${variant.name} copia`;
@@ -2360,39 +2600,43 @@ function duplicateActiveAgentFlowVariant(variantId = null) {
   delete clone.updatedAt;
   flow.generatedFlowVariants = Array.isArray(flow.generatedFlowVariants) ? flow.generatedFlowVariants : [];
   flow.generatedFlowVariants.push(clone);
+  state.selectedWorkflowVariantId = clone.id;
   flow.activeGeneratedFlowId = clone.id;
   applyAgentFlowVariant(flow, clone);
-  state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
+  state.selectedNodeId = null;
   persistState();
   renderAll();
-  showToast(`Flusso duplicato: ${clone.name}`);
+  showToast(`Workflow duplicato: ${clone.name}`);
 }
 
 function deleteActiveAgentFlowVariant(variantId = null) {
   const flow = getCurrentFlow();
   const variant = variantId ? (flow?.generatedFlowVariants || []).find((item) => item.id === variantId) : getActiveAgentFlowVariant(flow);
-  if (!flow || !variant) return showToast("Nessun flusso attivo da eliminare.");
-  if (!window.confirm(`Eliminare il flusso "${variant.name}"?`)) return;
+  if (!flow || !variant) return showToast("Nessun workflow attivo da eliminare.");
+  if (!window.confirm(`Eliminare il workflow "${variant.name}"?`)) return;
   const variants = (flow.generatedFlowVariants || []).filter((item) => item.id !== variant.id);
   flow.generatedFlowVariants = variants;
   const next = variants.at(-1) || null;
   if (next) {
+    state.selectedWorkflowVariantId = next.id;
     flow.activeGeneratedFlowId = next.id;
     applyAgentFlowVariant(flow, next);
-    state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
+    state.selectedNodeId = null;
   } else {
+    state.selectedWorkflowVariantId = null;
     flow.activeGeneratedFlowId = null;
     resetFlowToSingleAgent(flow);
-    state.selectedNodeId = flow.nodes[0]?.id || null;
+    state.selectedNodeId = null;
   }
   persistState();
   renderAll();
-  showToast(next ? `Flusso eliminato. Attivo: ${next.name}` : "Flusso eliminato. Nessuna variante attiva.");
+  showToast(next ? `Workflow eliminato. Attivo: ${next.name}` : "Workflow eliminato. Nessuna variante attiva.");
 }
 
 function getActiveAgentFlowVariant(flow = getCurrentFlow()) {
   if (!flow) return null;
-  return (flow.generatedFlowVariants || []).find((item) => item.id === flow.activeGeneratedFlowId) || null;
+  const selectedId = flow.id === state.currentFlowId ? state.selectedWorkflowVariantId : flow.activeGeneratedFlowId;
+  return (flow.generatedFlowVariants || []).find((item) => item.id === selectedId) || null;
 }
 
 function resetFlowToSingleAgent(flow) {
@@ -2406,11 +2650,11 @@ function resetFlowToSingleAgent(flow) {
       x: 330,
       y: 190,
       name: existingAgent?.name || "Agente operativo",
-      description: "Agente unico del flow: descrivi il processo nel prompt e crea una variante di flusso.",
+      description: "Agente unico del workflow: descrivi il processo nel prompt e crea una variante workflow.",
       condition: "Prompt da configurare",
       prompt,
       params: { memory: "booking_context", temperature: 0.2, requires_human_approval: false },
-      guardrail: "Crea un nuovo flusso dal prompt prima di eseguire.",
+      guardrail: "Crea un nuovo workflow dal prompt prima di eseguire.",
     },
   ];
   flow.edges = [];
@@ -2430,7 +2674,7 @@ function applyAgentFlowVariant(flow, variant) {
 }
 
 function saveActiveAgentFlowVariant(flow) {
-  const variant = (flow.generatedFlowVariants || []).find((item) => item.id === flow.activeGeneratedFlowId);
+  const variant = getActiveAgentFlowVariant(flow);
   if (!variant) return;
   Object.assign(variant, {
     summary: flow.summary,
@@ -2459,8 +2703,9 @@ function uniqueAgentFlowVariantId(flow, name) {
 
 function runCurrentFlowPreview() {
   const flow = getCurrentFlow();
-  if (!flow || !flow.nodes.length) {
-    showToast("Crea prima un diagramma di flusso.");
+  const activeVariant = getActiveAgentFlowVariant(flow);
+  if (!flow || !activeVariant || !flow.nodes.length) {
+    showToast("Seleziona prima un workflow da eseguire.");
     return;
   }
   saveActiveAgentFlowVariant(flow);
@@ -2469,9 +2714,9 @@ function runCurrentFlowPreview() {
 }
 
 function clearSelectedAgentPrompt() {
-  const node = getSelectedNode();
   const flow = getCurrentFlow();
-  if (!node || node.type !== "agent") {
+  const node = getAgentNode(flow);
+  if (!node) {
     showToast("Seleziona l'agente del flow per eliminare il prompt.");
     return;
   }
@@ -2485,10 +2730,13 @@ function clearSelectedAgentPrompt() {
 }
 
 function buildAgentGeneratedFlowBlueprint(prompt, sourceFlow, sourceAgent) {
-  const objective = extractPromptSection(prompt, "Obiettivo") || firstMeaningfulSentence(prompt) || "Obiettivo operativo descritto nel prompt";
-  const procedure = extractPromptSection(prompt, "Procedura") || extractPromptSection(prompt, "Istruzioni") || objective;
+  const generatorModel = getAgentGeneratorModel();
+  const triggerSpec = derivePromptTriggerSpec(prompt);
+  const actionSpecs = derivePromptActionSpecs(prompt);
+  const objective = extractPromptSection(prompt, "Obiettivo") || firstMeaningfulSentence(prompt) || summarizePromptIntent(prompt, triggerSpec, actionSpecs);
+  const procedure = extractPromptSection(prompt, "Procedura") || extractPromptSection(prompt, "Istruzioni") || actionSpecs.map((action) => action.description).join(" ") || objective;
   const tool = inferToolFromPrompt(prompt);
-  const trigger = inferTriggerFromPrompt(prompt, "agent.prompt.submitted");
+  const trigger = triggerSpec.event || inferTriggerFromPrompt(prompt, "agent.prompt.submitted");
   const category = inferCategoryFromPrompt(prompt);
   const shortObjective = compactText(objective, 92);
   const name = sourceFlow.name;
@@ -2499,9 +2747,13 @@ function buildAgentGeneratedFlowBlueprint(prompt, sourceFlow, sourceAgent) {
     name,
     category,
     trigger,
+    generatorModel: generatorModel.id,
+    generatorModelLabel: generatorModel.label,
     prompt,
     procedure,
     tool,
+    triggerSpec,
+    actionSpecs,
     folderId,
     groupId,
     level: "Core",
@@ -2509,8 +2761,8 @@ function buildAgentGeneratedFlowBlueprint(prompt, sourceFlow, sourceAgent) {
     sourceFlowName: "",
     bookingToolScope: isBookingFolderFlow(sourceFlow),
     availableTools: isBookingFolderFlow(sourceFlow) ? structuredClone(bookingFolderTools) : [],
-    summary: `Flow generato dall'agente "${sourceAgent.name}" per: ${shortObjective}`,
-    businessGoal: `raggiungere e verificare: ${shortObjective}`,
+    summary: `Workflow generato da ${generatorModel.label} dal prompt: ${shortObjective}`,
+    businessGoal: `eseguire e verificare quanto richiesto dal prompt: ${shortObjective}`,
   };
 }
 
@@ -2525,6 +2777,19 @@ function createAgentGeneratedFlow(blueprint) {
   };
   const generatedTools = deriveGeneratedToolSpecs(blueprint).slice(0, 4);
   const communicationTool = blueprint.bookingToolScope ? "Sendmail" : "guest.sendMessage";
+  const actionNodes = (blueprint.actionSpecs || []).map((action, index) => ({
+    id: `${blueprint.id}-action-${index + 1}`,
+    type: "action",
+    x: 620 + (generatedTools.length + index) * 285,
+    y: index % 2 === 0 ? 332 : 112,
+    name: action.name,
+    description: action.description,
+    condition: index === 0 && !generatedTools.length ? "policy.status == 'pass'" : `azione_${index}.status == 'ready'`,
+    businessGoal: blueprint.businessGoal,
+    capability: action.capability,
+    params: action.params,
+    guardrail: action.guardrail,
+  }));
   const toolNodes = generatedTools.map((tool, index) => ({
     id: `${blueprint.id}-tool-${index + 1}`,
     type: "tool",
@@ -2540,12 +2805,13 @@ function createAgentGeneratedFlow(blueprint) {
     params: { booking_id: "{{booking.id}}", dry_run: false, idempotency_key: `{{booking.id}}:${blueprint.id}:${index + 1}:v1` },
     guardrail: "Timeout, errore provider o failure definitiva aprono fallback operativo.",
   }));
-  const lastToolId = toolNodes.at(-1)?.id || ids.policy;
+  const executionNodes = [...toolNodes, ...actionNodes];
+  const lastExecutionId = executionNodes.at(-1)?.id || ids.policy;
   const hasCommunicationToolNode = generatedTools.some((tool) => tool.function === communicationTool);
-  const messageNode = hasCommunicationToolNode ? null : {
+  const messageNode = hasCommunicationToolNode || !promptRequiresCommunication(blueprint.prompt) ? null : {
     id: ids.message,
     type: "message",
-    x: 620 + Math.max(1, toolNodes.length) * 285,
+    x: 620 + Math.max(1, executionNodes.length) * 285,
     y: 176,
     name: "Comunica esito",
     description: "Invia aggiornamento sintetico a ospite o team solo dopo esito verificabile.",
@@ -2562,7 +2828,7 @@ function createAgentGeneratedFlow(blueprint) {
   const taskDefinition = {
     title: `Completare manualmente: ${blueprint.name}`,
     objective: blueprint.businessGoal,
-    tasklist: "iManager",
+    tasklist: "Operations",
     priority: "media",
     requiredContext: ["booking_id", "guest_contact", "unit_id", "motivo_escalation"],
     instructions: [
@@ -2581,7 +2847,7 @@ function createAgentGeneratedFlow(blueprint) {
       failureRoute: ids.task,
       params: { booking_id: "{{booking.id}}", dry_run: false, step_index: index + 1 },
     })),
-    ...(!generatedTools.some((tool) => tool.function === communicationTool)
+    ...(messageNode && !generatedTools.some((tool) => tool.function === communicationTool)
       ? [{
           function: communicationTool,
           label: labelFromTool(communicationTool),
@@ -2593,8 +2859,8 @@ function createAgentGeneratedFlow(blueprint) {
         }]
       : []),
     {
-      function: "imanager.createTask",
-      label: "Fallback iManager",
+      function: "operations.createTask",
+      label: "Fallback Operations",
       purpose: "Apre un task operativo quando dati, policy o provider bloccano il flow.",
       critical: true,
       params: taskDefinition,
@@ -2610,6 +2876,8 @@ function createAgentGeneratedFlow(blueprint) {
     category: blueprint.category,
     summary: blueprint.summary,
     trigger: blueprint.trigger,
+    generatorModel: blueprint.generatorModel,
+    generatorModelLabel: blueprint.generatorModelLabel,
     level: blueprint.level,
     agentModelVersion: 2,
     agentMode: "agent_generated_executable_flow",
@@ -2617,22 +2885,29 @@ function createAgentGeneratedFlow(blueprint) {
     generatedByAgent: {
       sourceAgent: blueprint.sourceAgentName,
       sourceFlow: blueprint.sourceFlowName,
+      model: blueprint.generatorModel,
+      modelLabel: blueprint.generatorModelLabel,
       createdAt: new Date().toISOString(),
     },
     businessGoal: blueprint.businessGoal,
-    metrics: { sla: "Da prompt", risk: "Da validare", agenti: "1 agente", automations: `${agentTools.length} tool` },
-    simulationOrder: [ids.trigger, ids.agent, ids.policy, ...toolNodes.map((node) => node.id), ...(messageNode ? [ids.message] : []), ids.task, ids.outcome],
+    metrics: { sla: "Da prompt", risk: "Da validare", agenti: "1 agente", automations: `${generatedTools.length} tool · ${actionNodes.length} azioni` },
+    simulationOrder: [ids.trigger, ids.agent, ids.policy, ...executionNodes.map((node) => node.id), ...(messageNode ? [ids.message] : []), ids.task, ids.outcome],
     edges: [
-      { from: ids.trigger, to: ids.agent, outcome: "prompt_compilato" },
+      { from: ids.trigger, to: ids.agent, outcome: blueprint.triggerSpec?.outcome || "evento_ricevuto" },
       { from: ids.agent, to: ids.policy, outcome: "piano_generato" },
-      ...(toolNodes.length
+      ...(executionNodes.length
         ? [
-            { from: ids.policy, to: toolNodes[0].id, outcome: "policy_pass" },
-            ...toolNodes.slice(1).map((node, index) => ({ from: toolNodes[index].id, to: node.id, outcome: "step_ok" })),
+            { from: ids.policy, to: executionNodes[0].id, outcome: "policy_pass" },
+            ...executionNodes.slice(1).map((node, index) => ({ from: executionNodes[index].id, to: node.id, outcome: "step_ok" })),
+          ]
+        : [{ from: ids.policy, to: ids.outcome, outcome: "policy_ok" }]),
+      ...(executionNodes.length
+        ? [
+            { from: lastExecutionId, to: messageNode ? ids.message : ids.outcome, outcome: "azione_ok" },
+            { from: lastExecutionId, to: ids.task, outcome: "fallback_op" },
           ]
         : []),
-      { from: lastToolId, to: messageNode ? ids.message : ids.outcome, outcome: "azione_ok" },
-      { from: lastToolId, to: ids.task, outcome: "fallback_op" },
+      { from: ids.policy, to: ids.task, outcome: "needs_human" },
       { from: ids.task, to: ids.outcome, outcome: "completato_manualmente" },
       ...(messageNode ? [{ from: ids.message, to: ids.outcome, outcome: "success_contract_ok" }] : []),
     ],
@@ -2642,11 +2917,16 @@ function createAgentGeneratedFlow(blueprint) {
         type: "trigger",
         x: 42,
         y: 260,
-        name: "Prompt agente ricevuto",
-        description: "L'agente riceve l'obiettivo operativo e crea il flow eseguibile.",
+        name: blueprint.triggerSpec?.name || "Evento dal prompt",
+        description: blueprint.triggerSpec?.description || "Evento in ingresso ricavato dal prompt del workflow.",
         condition: blueprint.trigger,
-        params: { event: blueprint.trigger, source: "agent.prompt", source_agent: blueprint.sourceAgentName },
-        guardrail: "Il prompt deve contenere obiettivo operativo, dati minimi e criteri di successo verificabili.",
+        params: {
+          event: blueprint.trigger,
+          source: blueprint.triggerSpec?.source || "prompt",
+          source_agent: blueprint.sourceAgentName,
+          prompt_clause: blueprint.triggerSpec?.raw || blueprint.prompt,
+        },
+        guardrail: blueprint.triggerSpec?.guardrail || "Il payload del trigger deve contenere i dati minimi indicati nel prompt.",
       },
       {
         id: ids.agent,
@@ -2654,16 +2934,17 @@ function createAgentGeneratedFlow(blueprint) {
         x: 330,
         y: 170,
         name: blueprint.sourceAgentName || "Agente operativo",
-        description: "Agente unico del flow: il prompt descrive il processo operativo e genera il diagramma eseguibile.",
+        description: `Agente responsabile: coordina i blocchi richiesti dal prompt "${compactText(blueprint.prompt, 76)}".`,
         condition: "prompt.valid == true",
         businessGoal: blueprint.businessGoal,
-        capability: "create_and_execute_operational_flow_from_prompt",
+        capability: "create_and_execute_operational_workflow_from_prompt",
         prompt: blueprint.prompt,
         tools: agentTools,
         taskTemplates: [taskDefinition],
         params: {
           available_tools: agentTools.map((tool) => tool.function),
           generated_from_prompt: true,
+          generator_model: blueprint.generatorModel,
         },
         successContract: {
           outcome: blueprint.businessGoal,
@@ -2671,7 +2952,7 @@ function createAgentGeneratedFlow(blueprint) {
           no_duplicate_side_effects: true,
         },
         fallbackPlaybook: [
-          "Se il tool principale fallisce definitivamente, aprire task iManager sullo stesso macro-obiettivo.",
+          "Se il tool principale fallisce definitivamente, aprire task Operations sullo stesso macro-obiettivo.",
           "Se mancano dati indispensabili, creare task Operations con il minimo contesto utile.",
           "Se l'esito non e verificabile, non chiudere il flow e richiedere validazione umana.",
         ],
@@ -2682,25 +2963,26 @@ function createAgentGeneratedFlow(blueprint) {
         type: "guardrail",
         x: 620,
         y: 76,
-        name: "Policy e dati minimi",
-        description: "Verifica autorizzazioni, dati disponibili e success contract prima delle azioni.",
-        condition: "dati_minimi && policy.status == 'pass'",
-        params: { checks: ["dati_minimi", "autorizzazione", "privacy", "success_contract"], failure_route: ids.task },
+        name: blueprint.triggerSpec?.checkName || "Check dati minimi",
+        description: blueprint.triggerSpec?.checkDescription || "Verifica i dati minimi richiesti dal prompt prima delle azioni.",
+        condition: blueprint.triggerSpec?.checkCondition || "dati_minimi && policy.status == 'pass'",
+        params: { checks: blueprint.triggerSpec?.checks || ["dati_minimi", "autorizzazione", "privacy", "success_contract"], failure_route: ids.task },
         guardrail: "Blocca azioni non autorizzate e instrada a task Operations.",
       },
       ...toolNodes,
+      ...actionNodes,
       ...(messageNode ? [messageNode] : []),
       {
         id: ids.task,
         type: "human_task",
-        x: 620 + Math.max(1, toolNodes.length) * 285,
+        x: 620 + Math.max(1, executionNodes.length) * 285,
         y: 418,
         name: "Fallback Op",
-        description: "Manual Task iManager creato dall'agente per completare lo stesso outcome quando tool, dati o policy bloccano il flow.",
+        description: "Task Operations creato dall'agente per completare lo stesso outcome quando tool, dati o policy bloccano il workflow.",
         condition: "tool.failure || policy.needs_human || missing_data",
         businessGoal: blueprint.businessGoal,
         capability: "create_operations_fallback_task",
-        tool: "imanager.createTask",
+        tool: "operations.createTask",
         agentIntervention: true,
         agentId: ids.agent,
         agentLabel: blueprint.sourceAgentName || "Agente operativo",
@@ -2711,10 +2993,10 @@ function createAgentGeneratedFlow(blueprint) {
       {
         id: ids.outcome,
         type: "outcome",
-        x: 905 + Math.max(1, toolNodes.length) * 285,
+        x: 905 + Math.max(1, executionNodes.length) * 285,
         y: 276,
-        name: "Outcome validato",
-        description: "Stato terminale esplicito: success contract verificato e audit registrato.",
+        name: deriveOutcomeNameFromBlueprint(blueprint),
+        description: `Stato terminale: ${deriveOutcomeDescriptionFromBlueprint(blueprint)}`,
         condition: "success_contract.validated == true",
         businessGoal: blueprint.businessGoal,
         params: { status: "completed", generated_by_agent: true },
@@ -2734,9 +3016,9 @@ function runGeneratedFlowPreview(flow) {
   state.simulationIndex = -1;
   setRuntimeTerminalVisible(true);
   setRuntimeTerminalOpen(true);
-  setRuntimeStatus("running", "Flow generato in esecuzione");
-  renderLog(["00 / agent.flow_created · grafo operativo generato dal prompt"]);
-  showToast("Flow creato dal prompt dell'agente ed esecuzione visuale avviata.");
+  setRuntimeStatus("running", "Workflow in esecuzione");
+  renderLog(["00 / agent.workflow_created · grafo operativo generato dal prompt"]);
+  showToast("Workflow creato dal prompt ed esecuzione visuale avviata.");
   const order = flow.simulationOrder.filter((nodeId) => flow.nodes.some((node) => node.id === nodeId));
   const tick = () => {
     state.simulationIndex += 1;
@@ -2747,11 +3029,11 @@ function runGeneratedFlowPreview(flow) {
       state.activeEdges = new Set();
       state.selectedNodeId = previousNodeId || state.selectedNodeId;
       clearGeneratedFlowPreview();
-      setRuntimeStatus("completed", "Flow completato");
+      setRuntimeStatus("completed", "Workflow completato");
       renderCanvas();
       renderInspector();
       renderLog([...order.map((id, index) => `${String(index + 1).padStart(2, "0")} / node.completed · ${flow.nodes.find((node) => node.id === id)?.name || id}`), "OK / success_contract · outcome validato"]);
-      showToast("Esecuzione visuale completata. Il flow resta modificabile nello Studio.");
+      showToast("Esecuzione visuale completata. Il workflow resta modificabile nello Studio.");
       return;
     }
     if (previousNodeId) state.nodeStatuses[previousNodeId] = "done";
@@ -2780,10 +3062,87 @@ function firstMeaningfulSentence(text) {
   return text.split(/[.!?]\s|\n/).map((item) => item.trim()).find((item) => item.length > 24) || "";
 }
 
+function derivePromptTriggerSpec(prompt) {
+  const text = String(prompt || "");
+  const lower = text.toLowerCase();
+  const explicitEvent = text.match(/(?:trigger|evento)\s*:\s*([a-z0-9_.-]+)/i)?.[1] || "";
+  if (/nuova\s+prenotazione|prenotazione\s+(?:nuova|creata|ricevuta)|new\s+booking|booking\s+created/.test(lower)) {
+    const source = /octorate/.test(lower) ? "Octorate" : /pms/.test(lower) ? "PMS" : /channel\s*manager/.test(lower) ? "Channel manager" : "Prenotazioni";
+    const event = explicitEvent || (source === "Octorate" ? "octorate.booking.created" : "booking.created");
+    const sourceSuffix = source === "Prenotazioni" ? "" : ` da ${source}`;
+    return {
+      event,
+      source,
+      raw: extractTriggerClause(text) || "nuova prenotazione",
+      name: `Nuova prenotazione${sourceSuffix}`,
+      description: `Evento in ingresso: una nuova prenotazione arriva${sourceSuffix}.`,
+      outcome: "prenotazione_ricevuta",
+      checkName: source === "Octorate" ? "Check dati Octorate" : "Check dati prenotazione",
+      checkDescription: `Verifica che la prenotazione${sourceSuffix} contenga i dati minimi necessari per proseguire.`,
+      checkCondition: source === "Octorate" ? "octorate.booking.present && booking.id" : "booking.present && booking.id",
+      checks: ["booking_id", "guest_contact", "unit_id", "arrival_date", "source"],
+      guardrail: "Non proseguire se il payload della prenotazione non contiene booking id, ospite e unita.",
+    };
+  }
+  const explicitClause = extractTriggerClause(text);
+  if (explicitClause) {
+    return {
+      event: explicitEvent || slugifyEvent(explicitClause),
+      source: inferTriggerSource(explicitClause),
+      raw: explicitClause,
+      name: capitalizeFirst(compactText(explicitClause, 48)),
+      description: `Evento in ingresso indicato nel prompt: ${explicitClause}.`,
+      outcome: "evento_ricevuto",
+    };
+  }
+  return {
+    event: explicitEvent || inferTriggerFromPrompt(prompt, "agent.prompt.submitted"),
+    source: "prompt",
+    raw: firstMeaningfulSentence(text) || text,
+    name: "Evento dal prompt",
+    description: "Evento in ingresso ricavato dal prompt del workflow.",
+    outcome: "evento_ricevuto",
+  };
+}
+
+function extractTriggerClause(prompt) {
+  const text = String(prompt || "").replace(/\s+/g, " ").trim();
+  const match = text.match(/(?:il\s+)?trigger\s+(?:deve\s+essere|e'|è|sia)\s+(.+?)(?=\s+(?:poi|quindi|e\s+poi|all'arrivo|quando\s+arriva|stampa|scrivi|invia|crea|aggiorna)\b|[.;]|$)/i)
+    || text.match(/(?:all'arrivo|quando\s+arriva|quando\s+ricevi)\s+(?:di|della|del|una|un)?\s*(.+?)(?=\s+(?:stampa|scrivi|invia|crea|aggiorna)\b|[.;]|$)/i);
+  return match ? cleanupPromptClause(match[1]) : "";
+}
+
+function derivePromptActionSpecs(prompt) {
+  const text = String(prompt || "").replace(/\s+/g, " ").trim();
+  const actions = [];
+  const printMatch = text.match(/\b(?:stampa|scrivi|mostra|logga)\s+["“']?([^"“”'.;]+)["”']?/i);
+  if (printMatch) {
+    const value = cleanupPromptClause(printMatch[1]);
+    actions.push({
+      name: `Stampa ${compactText(value, 34)}`,
+      description: `All'arrivo del trigger, l'agente stampa "${value}".`,
+      capability: "print_prompt_value",
+      params: { output: value, channel: "console" },
+      guardrail: "Eseguire esattamente il testo richiesto dal prompt, senza aggiungere comunicazioni o tool non richiesti.",
+      outcomeName: `${capitalizeFirst(compactText(value, 24))} stampato`,
+      outcomeDescription: `il testo "${value}" e stato stampato come richiesto dal prompt.`,
+    });
+  }
+  return actions;
+}
+
+function summarizePromptIntent(prompt, triggerSpec, actionSpecs) {
+  const actionText = actionSpecs.map((action) => action.description).join(" ");
+  if (triggerSpec?.name && actionText) return `${triggerSpec.name}: ${actionText}`;
+  if (triggerSpec?.name) return triggerSpec.name;
+  return firstMeaningfulSentence(prompt) || "Obiettivo operativo descritto nel prompt";
+}
+
 function deriveGeneratedToolSpecs(blueprint) {
   const prompt = `${blueprint.prompt}\n${blueprint.procedure || ""}`;
   if (blueprint.bookingToolScope) return deriveBookingToolSpecsFromPrompt(prompt);
   const explicitTools = [...prompt.matchAll(/\b(?:tool|funzione)\s*:\s*([a-z0-9_.-]+)/gi)].map((match) => match[1]);
+  if (!explicitTools.length && blueprint.actionSpecs?.length && !promptRequiresExternalTool(prompt)) return [];
   const steps = extractProcedureSteps(prompt);
   const inferred = steps.map((step) => inferToolSpecFromText(step)).filter(Boolean);
   const primary = inferToolSpecFromText(prompt) || { function: blueprint.tool, label: labelFromTool(blueprint.tool), purpose: "Esegue l'azione principale descritta nel prompt." };
@@ -2803,12 +3162,14 @@ function deriveGeneratedToolSpecs(blueprint) {
 function deriveBookingToolSpecsFromPrompt(prompt) {
   const lower = String(prompt || "").toLowerCase();
   const selected = [];
-  const wantsReservation = /prenotaz|reservation|octorate|pms|channel\s*manager|channelmanager|booking/.test(lower);
+  const explicit = String(prompt || "").match(/(?:tool|funzione)\s*:\s*(getReservation|Sendmail)/i)?.[1];
+  const wantsReservation = /\b(?:recupera|leggi|cerca|sincronizza|normalizza|crea|aggiorna|salva|scrivi|importa)\b.*\b(?:prenotaz|reservation|booking|pms|octorate)\b/.test(lower)
+    || /\b(?:pms|channel\s*manager|channelmanager)\b/.test(lower)
+    || explicit?.toLowerCase() === "getreservation";
   const wantsMail = /mail|email|e-mail|sendmail|messagg|comunica|invia|spedisc|scritt/.test(lower);
   if (wantsReservation) selected.push(bookingFolderTools.find((tool) => tool.function === "getReservation"));
   if (wantsMail) selected.push(bookingFolderTools.find((tool) => tool.function === "Sendmail"));
   if (!selected.length) {
-    const explicit = String(prompt || "").match(/(?:tool|funzione)\s*:\s*(getReservation|Sendmail)/i)?.[1];
     if (explicit) selected.push(bookingFolderTools.find((tool) => tool.function.toLowerCase() === explicit.toLowerCase()));
   }
   return selected.filter(Boolean).map((tool) => structuredClone(tool));
@@ -2846,6 +3207,9 @@ function inferTriggerFromPrompt(prompt, fallback) {
   const lower = prompt.toLowerCase();
   const explicit = prompt.match(/(?:trigger|evento)\s*:\s*([a-z0-9_.-]+)/i)?.[1];
   if (explicit) return explicit;
+  if (/nuova\s+prenotazione|prenotazione\s+(?:nuova|creata|ricevuta)|new\s+booking|booking\s+created/.test(lower)) {
+    return lower.includes("octorate") ? "octorate.booking.created" : "booking.created";
+  }
   if (lower.includes("check-in") || lower.includes("access")) return "agent.request.access_flow";
   if (lower.includes("rimbor") || lower.includes("refund")) return "agent.request.refund_flow";
   if (lower.includes("manutenz") || lower.includes("guasto")) return "agent.request.maintenance_flow";
@@ -2856,6 +3220,7 @@ function inferTriggerFromPrompt(prompt, fallback) {
 
 function inferCategoryFromPrompt(prompt) {
   const lower = prompt.toLowerCase();
+  if (lower.includes("prenotaz") || lower.includes("booking") || lower.includes("octorate")) return "Prenotazioni";
   if (lower.includes("check-in") || lower.includes("access") || lower.includes("smart lock")) return "Accessi";
   if (lower.includes("rimbor") || lower.includes("pagament") || lower.includes("refund")) return "Pagamenti";
   if (lower.includes("manutenz") || lower.includes("guasto")) return "Manutenzione";
@@ -2869,6 +3234,7 @@ function inferToolFromPrompt(prompt) {
   const lower = prompt.toLowerCase();
   const explicit = prompt.match(/(?:tool|funzione)\s*:\s*([a-z0-9_.-]+)/i)?.[1];
   if (explicit) return explicit;
+  if (/\b(?:stampa|scrivi|mostra|logga)\b/.test(lower)) return "ops.internalAction";
   if (lower.includes("smart lock") || lower.includes("access") || lower.includes("codic")) return "access.createSmartLockLink";
   if (lower.includes("rimbor") || lower.includes("refund")) return "payments.executeRefund";
   if (lower.includes("prezzo") || lower.includes("late checkout") || lower.includes("offerta")) return "revenue.calculateOffer";
@@ -2877,6 +3243,52 @@ function inferToolFromPrompt(prompt) {
   if (lower.includes("puliz") || lower.includes("housekeeping")) return "housekeeping.createTask";
   if (lower.includes("messaggio") || lower.includes("whatsapp") || lower.includes("email")) return "guest.sendMessage";
   return "ops.runTool";
+}
+
+function deriveOutcomeNameFromBlueprint(blueprint) {
+  const actionOutcome = blueprint.actionSpecs?.find((action) => action.outcomeName)?.outcomeName;
+  if (actionOutcome) return actionOutcome;
+  if (blueprint.triggerSpec?.name) return `${blueprint.triggerSpec.name} gestita`;
+  return "Outcome validato";
+}
+
+function deriveOutcomeDescriptionFromBlueprint(blueprint) {
+  const actionOutcome = blueprint.actionSpecs?.find((action) => action.outcomeDescription)?.outcomeDescription;
+  if (actionOutcome) return actionOutcome;
+  return "success contract verificato e audit registrato.";
+}
+
+function promptRequiresCommunication(prompt) {
+  return /\b(?:invia|manda|spedisc|email|mail|whatsapp|sms|messaggio|comunica|notifica)\b/i.test(String(prompt || ""));
+}
+
+function promptRequiresExternalTool(prompt) {
+  return /\b(?:tool|funzione|smart lock|accesso|codice|rimborso|pagamento|refund|addebito|prezzo|offerta|manutenzione|guasto|ticket|housekeeping|pulizia|recensione|review|pms|timeline|email|whatsapp|sms|messaggio)\b/i.test(String(prompt || ""));
+}
+
+function inferTriggerSource(value) {
+  const lower = String(value || "").toLowerCase();
+  if (lower.includes("octorate")) return "Octorate";
+  if (lower.includes("pms")) return "PMS";
+  if (lower.includes("channel")) return "Channel manager";
+  return "prompt";
+}
+
+function slugifyEvent(value) {
+  const slug = slugify(value || "custom-event").replace(/-/g, ".");
+  return slug.includes(".") ? slug : `prompt.${slug}`;
+}
+
+function cleanupPromptClause(value) {
+  return String(value || "")
+    .replace(/^(una|un|il|la|lo|le|gli|i)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function capitalizeFirst(value) {
+  const text = String(value || "").trim();
+  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : "";
 }
 
 function titleFromObjective(objective) {
@@ -2898,6 +3310,26 @@ function updateCurrentFlowMetadata(data) {
   if (!flow) return;
   stopSimulation(false);
   flow.name = data.name;
+  flow.agentName = data.name;
+  flow.agentDescription = data.summary;
+  flow.agentCategory = data.category;
+  flow.agentTags = data.tags;
+  flow.availableTools = createToolDefinitionsFromNames(data.tools, {
+    fallbackRoute: `${flow.id}-imanager-task`,
+    defaultFunction: getAgentTools(flow)[0]?.function || "ops.runTool",
+    defaultLabel: getAgentTools(flow)[0]?.label || "Tool operativo",
+    defaultPurpose: getAgentTools(flow)[0]?.purpose || "Tool operativo disponibile all'agente.",
+  });
+  const agent = getAgentNode(flow);
+  if (agent) {
+    agent.name = data.name;
+    agent.description = data.summary;
+    agent.tools = mergeToolDefinitions(flow.availableTools, Array.isArray(agent.tools) ? agent.tools : []);
+    agent.params = {
+      ...(agent.params || {}),
+      available_tools: agent.tools.map((tool) => tool.function),
+    };
+  }
   flow.folderId = data.folderId;
   flow.group = getGroupIdForFolder(data.folderId) || flow.group || getBusinessGroups()[0]?.id;
   flow.category = data.category;
@@ -2907,24 +3339,26 @@ function updateCurrentFlowMetadata(data) {
   state.selectedFolderId = data.folderId;
   if (data.folderId) state.closedFolderIds.delete(data.folderId);
   persistState();
-  showToast("Metadati del flusso aggiornati.");
+  showToast("Profilo agente aggiornato.");
   renderAll();
 }
 
 function deleteCurrentFlow() {
   const flow = getCurrentFlow();
   if (!flow) return;
-  if (!window.confirm(`Eliminare il flusso "${flow.name}"? L'azione rimuove il playbook dall'archivio locale.`)) return;
+  const profile = getAgentProfile(flow);
+  if (!window.confirm(`Eliminare l'agente "${profile.name}"? L'azione rimuove i workflow dall'archivio locale.`)) return;
   stopSimulation(false);
   const index = flows.findIndex((item) => item.id === flow.id);
   if (index >= 0) flows.splice(index, 1);
   state.deletedFlowIds.add(flow.id);
   const next = getVisibleFlows()[Math.max(0, Math.min(index, getVisibleFlows().length - 1))] || null;
   state.currentFlowId = next?.id || null;
-  state.selectedNodeId = next?.nodes[0]?.id || null;
+  state.selectedNodeId = null;
+  state.selectedWorkflowVariantId = null;
   if (next?.folderId) state.selectedFolderId = next.folderId;
   persistState();
-  showToast("Flusso eliminato.");
+  showToast("Agente eliminato.");
   renderAll();
 }
 
@@ -2994,7 +3428,7 @@ function deleteSelectedFolder() {
   const folderIdsToDelete = new Set([folder.id, ...descendantIds]);
   const flowCount = getVisibleFlows().filter((flow) => folderIdsToDelete.has(flow.folderId)).length;
   const childCount = descendantIds.size;
-  if (!window.confirm(`Eliminare "${folder.name}"${childCount ? ` e ${childCount} sottocartelle` : ""}? ${flowCount} flussi verranno spostati nella cartella superiore.`)) return;
+  if (!window.confirm(`Eliminare "${folder.name}"${childCount ? ` e ${childCount} sottocartelle` : ""}? ${flowCount} agenti verranno spostati nella cartella superiore.`)) return;
   flows.forEach((flow) => {
     if (folderIdsToDelete.has(flow.folderId)) flow.folderId = folder.parentId || getDefaultFolderIdForGroup(flow.group);
   });
@@ -3055,18 +3489,50 @@ function renderPalette() {
   });
 }
 
+function renderAgentGeneratorModelControls() {
+  const model = getAgentGeneratorModel(state.agentGeneratorModel);
+  if (els.agentModelSelect) {
+    els.agentModelSelect.innerHTML = agentGeneratorModels.map((item) => `
+      <option value="${escapeHtml(item.id)}" ${item.id === model.id ? "selected" : ""}>${escapeHtml(item.label)}</option>
+    `).join("");
+    els.agentModelSelect.disabled = !getCurrentFlow();
+  }
+  if (els.agentGeneratorStatus) {
+    const activeVariant = getActiveAgentFlowVariant();
+    const source = activeVariant?.generatorModelLabel || model.label;
+    els.agentGeneratorStatus.textContent = source;
+  }
+  if (els.workflowTabModelName) els.workflowTabModelName.textContent = model.label;
+}
+
+function getAgentGeneratorModel(modelId = state.agentGeneratorModel) {
+  return agentGeneratorModels.find((model) => model.id === modelId) || agentGeneratorModels.find((model) => model.id === defaultAgentGeneratorModel) || agentGeneratorModels[0];
+}
+
+function getValidAgentGeneratorModel(modelId) {
+  return getAgentGeneratorModel(modelId).id;
+}
+
 function renderCanvasHeader() {
   const flow = getCurrentFlow();
   if (!flow) {
-    els.flowTitle.textContent = "Nessun flusso selezionato";
+    els.flowTitle.textContent = "Nessun agente selezionato";
     els.flowCategory.textContent = "Studio";
     els.flowMeta.innerHTML = "";
     return;
   }
+  const profile = getAgentProfile(flow);
+  const activeVariant = getActiveAgentFlowVariant(flow);
   const group = getBusinessGroups().find((item) => item.id === flow.group);
-  els.flowTitle.textContent = flow.name;
-  els.flowCategory.textContent = `${group?.label || flow.group} · ${flow.category} / ${flow.trigger}`;
-  els.flowMeta.innerHTML = Object.entries(flow.metrics)
+  els.flowTitle.textContent = activeVariant?.name || "Seleziona un workflow";
+  els.flowCategory.textContent = `${profile.name} · ${group?.label || flow.group} / ${flow.trigger}`;
+  const meta = {
+    workflow: profile.workflowCount,
+    tool: profile.tools.length,
+    categoria: profile.category,
+    ...(flow.metrics || {}),
+  };
+  els.flowMeta.innerHTML = Object.entries(meta)
     .map(
       ([label, value]) => `
       <div class="metric">
@@ -3080,8 +3546,9 @@ function renderCanvasHeader() {
 
 function renderCanvas() {
   const flow = getCurrentFlow();
+  const activeVariant = getActiveAgentFlowVariant(flow);
   els.flowCanvas.innerHTML = "";
-  els.flowCanvas.classList.toggle("is-empty", !flow);
+  els.flowCanvas.classList.toggle("is-empty", !flow || !activeVariant);
 
   if (!flow) {
     els.flowCanvas.style.width = "100%";
@@ -3089,8 +3556,26 @@ function renderCanvas() {
     els.flowCanvas.innerHTML = `
       <div class="editor-empty-state">
         <svg aria-hidden="true"><use href="#icon-zap"></use></svg>
-        <strong>Il canvas è pronto</strong>
-        <span>Apri un gruppo nella sidebar e seleziona un flusso per iniziare a lavorare.</span>
+        <strong>Il canvas e pronto</strong>
+        <span>Apri una cartella e seleziona un agente per generare o modificare un workflow.</span>
+      </div>
+    `;
+    els.connectorLayer.innerHTML = "";
+    els.connectorLayer.setAttribute("width", "0");
+    els.connectorLayer.setAttribute("height", "0");
+    els.connectorLayer.style.width = "0";
+    els.connectorLayer.style.height = "0";
+    return;
+  }
+
+  if (!activeVariant) {
+    els.flowCanvas.style.width = "100%";
+    els.flowCanvas.style.minHeight = "100%";
+    els.flowCanvas.innerHTML = `
+      <div class="editor-empty-state">
+        <svg aria-hidden="true"><use href="#icon-bot"></use></svg>
+        <strong>Nessun workflow aperto</strong>
+        <span>Seleziona un workflow dalla factory centrale per aprire il diagramma.</span>
       </div>
     `;
     els.connectorLayer.innerHTML = "";
@@ -3155,7 +3640,7 @@ function renderCanvas() {
 function renderConnectors() {
   const flow = getCurrentFlow();
   els.connectorLayer.innerHTML = "";
-  if (!flow) return;
+  if (!flow || !getActiveAgentFlowVariant(flow)) return;
 
   flow.edges.forEach((edge) => {
     const fromId = Array.isArray(edge) ? edge[0] : edge.from;
@@ -3189,21 +3674,38 @@ function renderConnectors() {
 function renderInspector() {
   const node = getSelectedNode();
   if (!node) {
-    els.inspectorTitle.textContent = "Nessun nodo selezionato";
+    const flow = getCurrentFlow();
+    const agentNode = getAgentNode(flow);
+    const agentPrompt = String(agentNode?.prompt || "");
+    document.body.classList.remove("studio-has-selected-node");
+    els.inspectorTitle.textContent = "Nessun blocco selezionato";
     els.nodeBadge.hidden = true;
-    renderAgentFlowVariantControls(null);
+    if (els.agentCategoryField) els.agentCategoryField.hidden = true;
+    if (els.agentTagsField) els.agentTagsField.hidden = true;
+    if (els.nodePromptInput) {
+      els.nodePromptInput.value = agentPrompt;
+      els.nodePromptInput.disabled = !agentNode;
+    }
+    renderAgentFlowVariantControls();
     renderTabs();
     return;
   }
 
+  document.body.classList.add("studio-has-selected-node");
   els.inspectorTitle.textContent = node.name;
   els.nodeBadge.hidden = false;
   els.nodeBadge.textContent = typeLabels[node.type];
   els.nodeBadge.className = `node-badge type-${node.type}`;
   els.nodeNameInput.value = node.name || "";
   els.nodeDescriptionInput.value = node.description || "";
+  const flow = getCurrentFlow();
+  const profile = getAgentProfile(flow);
+  const isAgent = node.type === "agent";
+  if (els.agentCategoryField) els.agentCategoryField.hidden = !isAgent;
+  if (els.agentTagsField) els.agentTagsField.hidden = !isAgent;
+  if (els.agentCategoryInput) els.agentCategoryInput.value = isAgent ? profile?.category || "" : "";
+  if (els.agentTagsInput) els.agentTagsInput.value = isAgent ? (profile?.tags || []).join(", ") : "";
   els.nodeConditionInput.value = node.condition || "";
-  els.nodePromptInput.value = node.prompt || "";
   els.nodeToolInput.value = node.tool || "";
   els.nodeParamsInput.value = JSON.stringify(node.params || {}, null, 2);
   els.guardrailText.textContent = node.guardrail || "Nessun guardrail specifico configurato.";
@@ -3218,27 +3720,29 @@ function renderInspector() {
   renderInspectorCompleteness(node);
   renderAgentToolsPreview(node);
   renderAgentTaskPolicyPreview(node);
-  renderAgentFlowVariantControls(node);
+  const agentNode = getAgentNode(flow);
+  const agentPrompt = String(agentNode?.prompt || "");
+  els.nodePromptInput.value = agentPrompt;
+  renderAgentFlowVariantControls();
 
-  const isAgent = node.type === "agent";
   const hasTool = Boolean(node.tool) || node.type === "tool" || node.type === "message";
-  els.nodePromptInput.disabled = !isAgent;
+  els.nodePromptInput.disabled = !agentNode;
   els.nodeToolInput.disabled = !hasTool;
   els.nodeParamsInput.disabled = !(node.params || hasTool || node.type === "trigger" || node.type === "guardrail");
   if (els.generateAgentFlowButton) {
-    els.generateAgentFlowButton.disabled = !isAgent || !String(node.prompt || "").trim();
+    els.generateAgentFlowButton.disabled = !agentNode || !agentPrompt.trim();
   }
   if (els.regenerateAgentFlowButton) {
-    els.regenerateAgentFlowButton.disabled = !isAgent || !String(node.prompt || "").trim() || !getActiveAgentFlowVariant();
+    els.regenerateAgentFlowButton.disabled = !agentNode || !agentPrompt.trim() || !getActiveAgentFlowVariant();
   }
   if (els.runAgentFlowButton) {
-    els.runAgentFlowButton.disabled = !getCurrentFlow()?.nodes.length;
+    els.runAgentFlowButton.disabled = !getActiveAgentFlowVariant();
   }
   if (els.runAgentFlowFromPromptButton) {
     els.runAgentFlowFromPromptButton.disabled = !getCurrentFlow()?.nodes.length || !getActiveAgentFlowVariant();
   }
   if (els.clearAgentPromptButton) {
-    els.clearAgentPromptButton.disabled = !isAgent || !String(node.prompt || "").trim();
+    els.clearAgentPromptButton.disabled = !agentNode || !agentPrompt.trim();
   }
   renderTabs();
 }
@@ -3262,14 +3766,18 @@ function renderTabs() {
   });
 }
 
-function renderAgentFlowVariantControls(node = getSelectedNode()) {
+function renderAgentFlowVariantControls() {
   const flow = getCurrentFlow();
-  const isAgent = node?.type === "agent";
+  const isAgent = Boolean(getAgentNode(flow));
   const variants = Array.isArray(flow?.generatedFlowVariants) ? flow.generatedFlowVariants : [];
   const hasVariants = isAgent && variants.length > 0;
   const activeVariant = getActiveAgentFlowVariant(flow);
+  const activeId = activeVariant?.id || "";
   if (els.agentFlowPromptTitle) {
-    els.agentFlowPromptTitle.textContent = activeVariant ? activeVariant.name : "Nessun flusso selezionato";
+    els.agentFlowPromptTitle.textContent = activeVariant ? activeVariant.name : "Nessun workflow selezionato";
+  }
+  if (els.workflowTabActiveName) {
+    els.workflowTabActiveName.textContent = activeVariant ? activeVariant.name : "Nessun workflow selezionato";
   }
   if (els.agentFlowVariantNameInput) {
     els.agentFlowVariantNameInput.disabled = !isAgent;
@@ -3280,11 +3788,10 @@ function renderAgentFlowVariantControls(node = getSelectedNode()) {
   });
   if (els.agentFlowVariantList) {
     if (!isAgent) {
-      els.agentFlowVariantList.innerHTML = `<div class="agent-flow-empty">Seleziona l'agente per gestire i suoi flussi.</div>`;
+      els.agentFlowVariantList.innerHTML = `<div class="agent-flow-empty">Seleziona l'agente per gestire i suoi workflow.</div>`;
     } else if (!variants.length) {
-      els.agentFlowVariantList.innerHTML = `<div class="agent-flow-empty">Nessun flusso creato. Scrivi il prompt, assegna un nome e premi Crea.</div>`;
+      els.agentFlowVariantList.innerHTML = `<div class="agent-flow-empty">Nessun workflow creato. Scrivi il prompt, assegna un nome e premi Crea.</div>`;
     } else {
-      const activeId = flow.activeGeneratedFlowId || variants.at(-1)?.id;
       els.agentFlowVariantList.innerHTML = variants.map((variant) => renderAgentFlowVariantRow(variant, variant.id === activeId)).join("");
     }
   }
@@ -3295,10 +3802,9 @@ function renderAgentFlowVariantControls(node = getSelectedNode()) {
     return;
   }
   if (!variants.length) {
-    els.agentFlowVariantSelect.innerHTML = `<option value="">Nessun flusso creato</option>`;
+    els.agentFlowVariantSelect.innerHTML = `<option value="">Nessun workflow creato</option>`;
     return;
   }
-  const activeId = flow.activeGeneratedFlowId || variants.at(-1)?.id;
   els.agentFlowVariantSelect.innerHTML = variants.map((variant) => {
     const activeLabel = variant.id === activeId ? " · attivo" : "";
     return `<option value="${escapeHtml(variant.id)}" ${variant.id === activeId ? "selected" : ""}>${escapeHtml(variant.name + activeLabel)}</option>`;
@@ -3308,18 +3814,19 @@ function renderAgentFlowVariantControls(node = getSelectedNode()) {
 function renderAgentFlowVariantRow(variant, isActive) {
   const nodeCount = Array.isArray(variant.nodes) ? variant.nodes.length : 0;
   const toolCount = Array.isArray(variant.nodes) ? variant.nodes.filter((node) => node.type === "tool").length : 0;
+  const modelLabel = variant.generatorModelLabel || getAgentGeneratorModel(variant.generatorModel).label;
   return `
     <article class="agent-flow-row ${isActive ? "is-active" : ""}" data-flow-variant-id="${escapeHtml(variant.id)}">
-      <button class="agent-flow-row-main" type="button" data-flow-action="activate" title="Imposta come flusso attivo">
+      <button class="agent-flow-row-main" type="button" data-flow-action="activate" title="Imposta come workflow attivo">
         <strong>${escapeHtml(variant.name)}</strong>
-        <span>${nodeCount} nodi · ${toolCount} tool${variant.updatedAt ? " · modificato" : ""}</span>
+        <span>${nodeCount} nodi · ${toolCount} tool · ${escapeHtml(modelLabel)}${variant.updatedAt ? " · modificato" : ""}</span>
         ${isActive ? `<span class="active-pill">attivo</span>` : ""}
       </button>
       <div class="agent-flow-row-actions">
-        <button class="icon-button small" type="button" data-flow-action="run" aria-label="Esegui flusso" title="Esegui flusso"><svg><use href="#icon-play"></use></svg></button>
-        <button class="icon-button small" type="button" data-flow-action="edit" aria-label="Modifica prompt flusso" title="Modifica prompt flusso"><svg><use href="#icon-edit"></use></svg></button>
-        <button class="icon-button small" type="button" data-flow-action="duplicate" aria-label="Duplica flusso" title="Duplica flusso"><svg><use href="#icon-copy"></use></svg></button>
-        <button class="icon-button small danger" type="button" data-flow-action="delete" aria-label="Elimina flusso" title="Elimina flusso"><svg><use href="#icon-trash"></use></svg></button>
+        <button class="icon-button small" type="button" data-flow-action="run" aria-label="Esegui workflow" title="Esegui workflow"><svg><use href="#icon-play"></use></svg></button>
+        <button class="icon-button small" type="button" data-flow-action="edit" aria-label="Modifica prompt workflow" title="Modifica prompt workflow"><svg><use href="#icon-edit"></use></svg></button>
+        <button class="icon-button small" type="button" data-flow-action="duplicate" aria-label="Duplica workflow" title="Duplica workflow"><svg><use href="#icon-copy"></use></svg></button>
+        <button class="icon-button small danger" type="button" data-flow-action="delete" aria-label="Elimina workflow" title="Elimina workflow"><svg><use href="#icon-trash"></use></svg></button>
       </div>
     </article>
   `;
@@ -3327,23 +3834,25 @@ function renderAgentFlowVariantRow(variant, isActive) {
 
 function renderEditorAvailability() {
   const hasFlow = Boolean(getCurrentFlow());
-  const selectedNode = getSelectedNode();
+  const hasWorkflow = Boolean(getActiveAgentFlowVariant());
+  const agentNode = getAgentNode();
+  const agentPrompt = String(agentNode?.prompt || "");
   els.saveButton.disabled = !hasFlow;
-  els.simulateButton.disabled = !hasFlow;
+  els.simulateButton.disabled = !hasWorkflow;
   if (els.generateAgentFlowButton) {
-    els.generateAgentFlowButton.disabled = !selectedNode || selectedNode.type !== "agent" || !String(selectedNode.prompt || "").trim();
+    els.generateAgentFlowButton.disabled = !agentNode || !agentPrompt.trim();
   }
   if (els.regenerateAgentFlowButton) {
-    els.regenerateAgentFlowButton.disabled = !selectedNode || selectedNode.type !== "agent" || !String(selectedNode.prompt || "").trim() || !getActiveAgentFlowVariant();
+    els.regenerateAgentFlowButton.disabled = !agentNode || !agentPrompt.trim() || !getActiveAgentFlowVariant();
   }
   if (els.runAgentFlowButton) {
-    els.runAgentFlowButton.disabled = !hasFlow || !getCurrentFlow()?.nodes.length;
+    els.runAgentFlowButton.disabled = !hasWorkflow || !getCurrentFlow()?.nodes.length;
   }
   if (els.runAgentFlowFromPromptButton) {
-    els.runAgentFlowFromPromptButton.disabled = !hasFlow || !getCurrentFlow()?.nodes.length || !getActiveAgentFlowVariant();
+    els.runAgentFlowFromPromptButton.disabled = !hasWorkflow || !getCurrentFlow()?.nodes.length || !getActiveAgentFlowVariant();
   }
   if (els.clearAgentPromptButton) {
-    els.clearAgentPromptButton.disabled = !selectedNode || selectedNode.type !== "agent" || !String(selectedNode.prompt || "").trim();
+    els.clearAgentPromptButton.disabled = !agentNode || !agentPrompt.trim();
   }
   if (els.newFlowButton) els.newFlowButton.disabled = false;
   if (els.duplicateFlowButton) els.duplicateFlowButton.disabled = !hasFlow;
@@ -3351,7 +3860,7 @@ function renderEditorAvailability() {
   if (els.deleteFlowButton) els.deleteFlowButton.disabled = !hasFlow;
   const hasAgent = Boolean(getCurrentFlow()?.nodes.some((node) => node.type === "agent"));
   els.paletteGrid.querySelectorAll("button").forEach((button) => {
-    button.disabled = !hasFlow || (button.dataset.nodeType === "agent" && hasAgent);
+    button.disabled = !hasWorkflow || (button.dataset.nodeType === "agent" && hasAgent);
   });
   renderFlowManagerActions();
 }
@@ -3413,15 +3922,18 @@ function renderLog(items, liveIndex = -1) {
 
 function selectFlow(flowId) {
   stopSimulation(false);
+  const previousFlow = getCurrentFlow();
+  if (previousFlow) saveActiveAgentFlowVariant(previousFlow);
   const flow = getVisibleFlows().find((item) => item.id === flowId);
   if (!flow) return;
   state.currentFlowId = flowId;
+  state.selectedWorkflowVariantId = null;
   state.closedGroups.delete(flow.group);
   if (flow.folderId) {
     state.selectedFolderId = flow.folderId;
     state.closedFolderIds.delete(flow.folderId);
   }
-  state.selectedNodeId = flow.nodes.find((node) => node.type === "agent")?.id || flow.nodes[0]?.id;
+  state.selectedNodeId = null;
   state.nodeStatuses = {};
   state.activeEdges = new Set();
   renderFlowList();
@@ -3429,7 +3941,7 @@ function selectFlow(flowId) {
   renderCanvas();
   renderInspector();
   renderEditorAvailability();
-  renderLog([`Flusso caricato: ${flow.name}`]);
+  renderLog([`Agente caricato: ${getAgentProfile(flow).name}`]);
   setRuntimeStatus("ready", "Pronto");
 }
 
@@ -3453,8 +3965,13 @@ function addNode(type) {
   setRuntimeStatus("ready", "Pronto");
   const flow = getCurrentFlow();
   if (!flow) return;
+  const activeVariant = getActiveAgentFlowVariant(flow);
+  if (!activeVariant) {
+    showToast("Seleziona un workflow dalla factory prima di aggiungere blocchi.");
+    return;
+  }
   if (type === "agent" && flow.nodes.some((node) => node.type === "agent")) {
-    showToast("Ogni flow puo avere un solo agente. Modifica il prompt dell'agente esistente.");
+    showToast("Ogni workflow ha un agente responsabile. Modifica il prompt dell'agente esistente.");
     return;
   }
   const selected = getSelectedNode();
@@ -3470,7 +3987,7 @@ function addNode(type) {
     description: defaultDescriptionForType(type),
     condition: "Aggiungi condizione di routing",
     prompt: type === "agent" ? defaultAgentPrompt() : "",
-    tool: type === "tool" || type === "message" ? defaultToolForType(type) : "",
+    tool: type === "tool" || type === "message" || type === "human_task" ? defaultToolForType(type) : "",
     params: defaultParamsForType(type),
     guardrail: "Configura limiti, fallback e casi che richiedono approvazione umana.",
   };
@@ -3493,19 +4010,27 @@ function duplicateCurrentFlow() {
   stopSimulation(false);
   const flow = getCurrentFlow();
   if (!flow) return;
+  const profile = getAgentProfile(flow);
   const clone = structuredClone(flow);
-  clone.id = uniqueFlowId(`${flow.name} copia`);
+  clone.id = uniqueFlowId(`${profile.name} copia`);
   clone.name = `${flow.name} - copia`;
-  clone.summary = "Copia modificabile del playbook selezionato.";
+  clone.agentName = `${profile.name} - copia`;
+  clone.summary = "Copia modificabile dell'agente selezionato.";
+  clone.agentDescription = profile.description;
   clone.businessId = state.activeBusinessId;
   clone.folderId = flow.folderId || getDefaultFolderIdForGroup(flow.group);
+  remapFlowInternalIds(clone, flow.id, clone.id);
+  clone.nodes?.forEach((node) => {
+    if (node.type === "agent") node.name = clone.agentName;
+  });
   flows.unshift(clone);
   state.currentFlowId = clone.id;
   state.selectedFolderId = clone.folderId;
   if (clone.folderId) state.closedFolderIds.delete(clone.folderId);
-  state.selectedNodeId = clone.nodes.find((node) => node.type === "agent")?.id || clone.nodes[0]?.id;
+  state.selectedNodeId = null;
+  state.selectedWorkflowVariantId = null;
   persistState();
-  showToast("Flusso duplicato. Puoi modificarlo dall'inspector.");
+  showToast("Agente duplicato. Puoi modificarlo dall'inspector.");
   renderAll();
 }
 
@@ -3558,7 +4083,13 @@ function onNodePointerDown(event, node) {
     offsetX: event.clientX - rect.left - node.x,
     offsetY: event.clientY - rect.top - node.y,
   };
-  event.currentTarget.setPointerCapture(event.pointerId);
+  if (Number.isFinite(event.pointerId) && typeof event.currentTarget.setPointerCapture === "function") {
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch (error) {
+      state.drag = null;
+    }
+  }
 }
 
 function onPointerMove(event) {
@@ -3588,9 +4119,12 @@ function defaultNameForType(type) {
     trigger: "Nuovo trigger",
     agent: "Nuovo agente",
     tool: "Nuova tool call",
-    message: "Nuovo messaggio",
-    guardrail: "Nuovo controllo",
-  }[type];
+    action: "Nuovo action block",
+    message: "Nuova comunicazione",
+    guardrail: "Nuovo check block",
+    human_task: "Nuovo human task",
+    outcome: "Nuovo outcome",
+  }[type] || "Nuovo blocco";
 }
 
 function defaultDescriptionForType(type) {
@@ -3598,9 +4132,12 @@ function defaultDescriptionForType(type) {
     trigger: "Definisci evento in ingresso, sorgente e payload minimo.",
     agent: "Configura obiettivo, contesto, criteri decisionali e fallback.",
     tool: "Collega una funzione operativa con parametri espliciti.",
+    action: "Definisci un'azione interna dell'agente senza chiamata a provider esterni.",
     message: "Imposta canale, template, lingua e condizioni di invio.",
-    guardrail: "Definisci blocchi, soglie e casi da passare allo staff.",
-  }[type];
+    guardrail: "Definisci controlli, soglie e percorsi di routing.",
+    human_task: "Apri un task Operations con obiettivo, contesto minimo ed evidenze richieste.",
+    outcome: "Definisci stato terminale e success contract verificabile.",
+  }[type] || "Configura responsabilita, input, output e fallback del blocco.";
 }
 
 function defaultToolForType(type) {
@@ -3612,6 +4149,7 @@ function defaultToolForType(type) {
     clinic: "patient.sendMessage",
     fitness: "member.sendMessage",
   };
+  if (type === "human_task") return "operations.createTask";
   return type === "message" ? messageTools[business.id] || "customer.sendMessage" : "ops.runTool";
 }
 
@@ -3625,24 +4163,38 @@ function defaultParamsForType(type) {
   if (type === "message") {
     return { channel: "whatsapp", template: "custom_template", business_id: state.activeBusinessId };
   }
+  if (type === "action") {
+    return { write_audit_note: true, update_memory: false, side_effects: "none" };
+  }
   if (type === "guardrail") {
-    return { checks: [], failure_route: "ops.createStaffTask" };
+    return { checks: [], pass_route: "next", failure_route: "operations.createTask" };
+  }
+  if (type === "human_task") {
+    return {
+      tasklist: "Operations",
+      title: "Completare manualmente il workflow",
+      required_context: ["booking_id", "guest_contact", "motivo_escalation"],
+      required_evidence: ["outcome_validato"],
+    };
+  }
+  if (type === "outcome") {
+    return { status: "completed", success_contract_required: true };
   }
   return { booking_id: "{{booking.id}}", dry_run: false };
 }
 
 function defaultAgentPrompt() {
   const business = getBusinessProfile();
-  return `Sei l'agente responsabile di un flusso operativo per ${business.name}, ${business.type.toLowerCase()}.
+  return `Sei l'agente responsabile di un workflow operativo per ${business.name}, ${business.type.toLowerCase()}.
 
-Obiettivo: completa il macro-obiettivo del flusso usando i tool disponibili e creando task iManager quando serve intervento umano.
+Obiettivo: completa il macro-obiettivo del workflow usando i tool disponibili e creando task Operations quando serve intervento umano.
 
 Istruzioni:
 1. Valuta solo i dati disponibili nel trigger e nei sistemi collegati.
 2. Usa i tool configurati solo quando policy, autorizzazioni e dati minimi sono presenti.
-3. Non dichiarare mai completata un'azione finche il tool o il task iManager non restituisce evidenza verificabile.
-4. Per ogni escalation, fallback, timeout, blocco policy o dato mancante, crea sempre un task nella tasklist iManager.
-5. Ogni task iManager deve contenere solo obiettivo manuale, dati minimi necessari, scadenza, evidenze richieste e riferimento operativo.
+3. Non dichiarare mai completata un'azione finche il tool o il task Operations non restituisce evidenza verificabile.
+4. Per ogni escalation, fallback, timeout, blocco policy o dato mancante, crea sempre un task nella tasklist Operations.
+5. Ogni task Operations deve contenere solo obiettivo manuale, dati minimi necessari, scadenza, evidenze richieste e riferimento operativo.
 6. Non inserire nei task log tecnici completi, dati personali non necessari o dettagli che non aiutano l'operatore a completare il lavoro.
 
 Tono: professionale, concreto, calmo e orientato all'operativita.`;
@@ -3690,7 +4242,7 @@ function renderInspectorCompleteness(node) {
   els.taskPreview.innerHTML = task
     ? `<p class="eyebrow">Anteprima task generato</p><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.businessGoal)}</span><p>${escapeHtml(task.proposal)}</p>`
     : taskDefinition
-      ? `<p class="eyebrow">Task iManager generato</p><strong>${escapeHtml(taskDefinition.title)}</strong><span>${escapeHtml(taskDefinition.objective)}</span><p>${escapeHtml(taskDefinition.privacy || "Contesto limitato ai dati necessari al completamento.")}</p>`
+      ? `<p class="eyebrow">Task Operations generato</p><strong>${escapeHtml(taskDefinition.title)}</strong><span>${escapeHtml(taskDefinition.objective)}</span><p>${escapeHtml(taskDefinition.privacy || "Contesto limitato ai dati necessari al completamento.")}</p>`
       : `<p class="eyebrow">Anteprima task</p><span>Nessun task operativo collegato a questo nodo.</span>`;
 }
 
@@ -3717,7 +4269,7 @@ function renderAgentToolsPreview(node) {
       <p class="eyebrow">Intervento agente</p>
       <article>
         <strong>${escapeHtml(node.agentLabel || "Agente responsabile")}</strong>
-        <span>Questo nodo mostra dove l'agente interviene con un tool, una comunicazione o un task iManager.</span>
+        <span>Questo nodo mostra dove l'agente interviene con un tool, una comunicazione o un task Operations.</span>
       </article>
     `;
     return;
@@ -3740,7 +4292,7 @@ function renderAgentTaskPolicyPreview(node) {
   }
   els.agentTaskPolicyPreview.hidden = false;
   els.agentTaskPolicyPreview.innerHTML = `
-    <p class="eyebrow">Tasklist iManager</p>
+    <p class="eyebrow">Operations task</p>
     ${taskDefinitions.map((task) => `
       <article>
         <strong>${escapeHtml(task.title)}</strong>
@@ -3804,6 +4356,9 @@ function startSelectedScenario() {
   const editorFlow = flows.find((item) => item.id === flow.id);
   if (editorFlow) {
     state.currentFlowId = editorFlow.id;
+    const runtimeVariant = (editorFlow.generatedFlowVariants || []).find((variant) => variant.id === editorFlow.activeGeneratedFlowId) || editorFlow.generatedFlowVariants?.[0] || null;
+    state.selectedWorkflowVariantId = runtimeVariant?.id || null;
+    if (runtimeVariant) applyAgentFlowVariant(editorFlow, runtimeVariant);
     state.selectedNodeId = editorFlow.nodes[0]?.id;
   }
   setRuntimeTerminalVisible(true);
@@ -4028,7 +4583,7 @@ function renderTaskDetail(task, target = els.cockpitTaskDetail) {
     return;
   }
   if (task.status === "resolved") {
-    target.innerHTML = `<div class="resolution-complete"><span>Task risolto</span><h3>${escapeHtml(task.title)}</h3><p>Il flow è ripartito con <code>${escapeHtml(task.resolution.type)}</code>.</p></div>`;
+    target.innerHTML = `<div class="resolution-complete"><span>Task risolto</span><h3>${escapeHtml(task.title)}</h3><p>Il workflow e ripartito con <code>${escapeHtml(task.resolution.type)}</code>.</p></div>`;
     return;
   }
   const selectedFallback = task.fallbacks.find((fallback) => fallback.id === state.selectedFallbackId) || task.fallbacks[0];
@@ -4043,8 +4598,8 @@ function renderTaskDetail(task, target = els.cockpitTaskDetail) {
     <form id="taskResolutionForm" class="resolution-form">
       ${(task.successContract.requiredFields || []).map((field) => `<label class="field"><span>${escapeHtml(humanize(field))}</span><input name="${escapeHtml(field)}" value="${escapeHtml(defaults[field] || defaultResolutionValue(field))}" required /></label>`).join("")}
       <fieldset><legend>Evidenze obbligatorie</legend>${(task.successContract.requiredEvidence || []).map((evidence) => `<label class="check-field"><input type="checkbox" name="evidence" value="${escapeHtml(evidence)}" checked /><span>${escapeHtml(humanize(evidence))}</span></label>`).join("")}</fieldset>
-      <div class="resolution-impact"><strong>Impatto sul flow</strong><span>Completa lo step in attesa e riprende dal nodo successivo. Nessuna azione gia riuscita viene ripetuta.</span></div>
-      <button class="primary-action" type="submit">Conferma e riprendi flow</button>
+      <div class="resolution-impact"><strong>Impatto sul workflow</strong><span>Completa lo step in attesa e riprende dal nodo successivo. Nessuna azione gia riuscita viene ripetuta.</span></div>
+      <button class="primary-action" type="submit">Conferma e riprendi workflow</button>
     </form>`;
   target.querySelector("#taskResolutionForm")?.addEventListener("submit", submitTaskResolution);
 }
@@ -4072,7 +4627,7 @@ function submitTaskResolution(event) {
     showToast(result.errors.join(" · "));
     return;
   }
-  showToast("Outcome verificato. Il flow riprende dal punto deterministico.");
+  showToast("Outcome verificato. Il workflow riprende dal punto deterministico.");
   startAutoRun();
   setActiveView("cockpit");
   renderCockpit();
@@ -4108,6 +4663,14 @@ function translateStatus(status) {
 
 function humanize(value) {
   return String(value).replaceAll("_", " ").replace(/^./, (char) => char.toUpperCase());
+}
+
+function parseDelimitedList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  return String(value || "")
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function defaultResolutionValue(field) {
@@ -4176,7 +4739,9 @@ function hydrateSavedState() {
 
     state.activeBusinessId = defaultBusinessId;
     state.currentFlowId = flows.some((flow) => flow.id === saved.currentFlowId) ? saved.currentFlowId : null;
-    state.selectedNodeId = state.currentFlowId ? saved.selectedNodeId || null : null;
+    state.selectedNodeId = null;
+    state.selectedWorkflowVariantId = null;
+    state.agentGeneratorModel = getValidAgentGeneratorModel(saved.agentGeneratorModel || defaultAgentGeneratorModel);
     state.closedGroups = new Set(getBusinessGroups().map((group) => group.id));
     state.flowFolders = normalizeFlowFolders(Array.isArray(saved.flowFolders) ? saved.flowFolders : []);
     state.closedFolderIds = new Set(Array.isArray(saved.closedFolderIds) ? saved.closedFolderIds : []);
@@ -4197,6 +4762,8 @@ function persistState() {
       flowFolders: state.flowFolders,
       currentFlowId: state.currentFlowId,
       selectedNodeId: state.selectedNodeId,
+      selectedWorkflowVariantId: state.selectedWorkflowVariantId,
+      agentGeneratorModel: state.agentGeneratorModel,
       closedGroups: [...state.closedGroups],
       closedFolderIds: [...state.closedFolderIds],
       selectedFolderId: state.selectedFolderId,
@@ -4217,6 +4784,21 @@ function uniqueFlowId(name) {
     index += 1;
   }
   return candidate;
+}
+
+function remapFlowInternalIds(flow, fromId, toId) {
+  const visit = (value) => {
+    if (typeof value === "string") return value.replaceAll(fromId, toId);
+    if (Array.isArray(value)) return value.map(visit);
+    if (value && typeof value === "object") {
+      Object.keys(value).forEach((key) => {
+        value[key] = visit(value[key]);
+      });
+    }
+    return value;
+  };
+  visit(flow);
+  flow.id = toId;
 }
 
 function uniqueFolderId(name) {
